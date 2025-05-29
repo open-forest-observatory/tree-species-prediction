@@ -1,4 +1,3 @@
-import json
 import argparse
 import numpy as np
 import pandas as pd
@@ -88,9 +87,10 @@ def main(camera_file, dtm_file, output_csv):
         "corr_ground_vs_camera_elevation": correlation
     }
 
-    print("Height above ground summary stats:")
-    for k, v in stats.items():
-        print(f"{k}: {v:.2f}")
+    if args.verbose:
+        print("Height above ground summary stats:")
+        for k, v in stats.items():
+            print(f"{k}: {v:.2f}")
 
     # Prepare the data as a single-row dictionary
     summary_row = {
@@ -110,6 +110,7 @@ if __name__ == "__main__":
     parser.add_argument("--camera-file", default=EXAMPLE_CAMERAS_FILENAME, help="Path to camera file")
     parser.add_argument("--dtm-file", default=EXAMPLE_DTM_FILE, help="Path to DTM raster file")
     parser.add_argument("--output-csv", default="altitude_summary.csv", help="Path to save output CSV summary")
+    parser.add_argument("--verbose", action="store_true", help="Print summary statistics to stdout")
 
     args = parser.parse_args()
     main(args.camera_file, args.dtm_file, args.output_csv)
