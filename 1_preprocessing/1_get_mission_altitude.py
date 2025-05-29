@@ -77,18 +77,18 @@ def main(camera_file, dtm_file, output_csv):
     cv = np.std(heights_np) / np.mean(heights_np)
     correlation = np.corrcoef(ground_np, camera_np)[0, 1]  # Get value from the correlation matrix
 
-    stats = {
-        "count": len(heights_np),
-        "mean": np.mean(heights_np),
-        "std": np.std(heights_np),
-        "min": np.min(heights_np),
-        "max": np.max(heights_np),
-        "median": np.median(heights_np),
-        "cv": cv,
-        "corr_ground_vs_camera_elevation": correlation
-    }
-
     if args.verbose:
+        stats = {
+            "count": len(heights_np),
+            "mean": np.mean(heights_np),
+            "std": np.std(heights_np),
+            "min": np.min(heights_np),
+            "max": np.max(heights_np),
+            "median": np.median(heights_np),
+            "cv": cv,
+            "corr_ground_vs_camera_elevation": correlation
+        }
+
         print("Height above ground summary stats:")
         for k, v in stats.items():
             print(f"{k}: {v:.2f}")
