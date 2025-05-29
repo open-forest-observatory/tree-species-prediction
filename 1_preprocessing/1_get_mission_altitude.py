@@ -20,13 +20,13 @@ def main(camera_file, dtm_file, output_csv):
     for camera in camera_set.cameras:
         location = (camera.local_to_epsg_4978_transform @ camera.cam_to_world_transform)
         # Extract the first 3 values from the final column of the transformation matrix
-        points_in_ECEF = location[:3,3:].T
-        camera_locations.append(Point(points_in_ECEF[0]))
+        points_in_ECEF = location[:3, 3]
+        camera_locations.append(Point(points_in_ECEF))
 
     # Step 2: Create a gdf with the camera coords in earth-centered, earth-fixed frame
     ECEF_cam_locations = gpd.GeoDataFrame(
         geometry=camera_locations,
-        crs="EPSG:4978"
+        crs=4978
     )
 
     with rio.open(dtm_file) as src:
@@ -61,6 +61,7 @@ def main(camera_file, dtm_file, output_csv):
         # Skip no-data points
         if elev.mask[0] == True:
             continue
+        # Index 0 because each sampled elevation is a 1 element masked array
         ground_height = elev.data[0]
         cam_height = cam_pt.z
         # Record the difference in heights as the altitude
