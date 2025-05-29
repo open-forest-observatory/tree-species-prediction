@@ -9,22 +9,12 @@ from geograypher.cameras import MetashapeCameraSet
 from geograypher.constants import (
     EXAMPLE_CAMERAS_FILENAME,
     EXAMPLE_DTM_FILE,
-    EXAMPLE_IMAGE_FOLDER,
-    EXAMPLE_INTRINSICS
 )
 
-def main(camera_file, image_folder, intrinsics_file, dtm_file, output_csv):
-    # Load intrinsics: use example dict if no JSON file is given
-    if isinstance(intrinsics_file, str):
-        with open(intrinsics_file, 'r') as f:
-            intrinsics = json.load(f)
-    else:
-        intrinsics = EXAMPLE_INTRINSICS
+def main(camera_file, dtm_file, output_csv):
 
     # Step 1: get camera locations
-    camera_set = MetashapeCameraSet(camera_file=camera_file,
-                                image_folder=image_folder,
-                                default_sensor_params=intrinsics)
+    camera_set = MetashapeCameraSet(camera_file=camera_file, image_folder="")
 
     camera_locations = []
     for camera in camera_set.cameras:
@@ -117,10 +107,8 @@ def main(camera_file, image_folder, intrinsics_file, dtm_file, output_csv):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compute height above ground for cameras and export summary statistics.")
     parser.add_argument("--camera-file", default=EXAMPLE_CAMERAS_FILENAME, help="Path to camera file")
-    parser.add_argument("--image-folder", default=EXAMPLE_IMAGE_FOLDER, help="Path to image folder")
-    parser.add_argument("--intrinsics_file", default=None, help="Path to intrinsics JSON file (or leave empty to use example)")
     parser.add_argument("--dtm-file", default=EXAMPLE_DTM_FILE, help="Path to DTM raster file")
     parser.add_argument("--output-csv", default="altitude_summary.csv", help="Path to save output CSV summary")
 
     args = parser.parse_args()
-    main(args.camera_file, args.image_folder, args.intrinsics_file, args.dtm_file, args.output_csv)
+    main(args.camera_file, args.dtm_file, args.output_csv)
