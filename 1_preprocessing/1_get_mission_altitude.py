@@ -29,8 +29,8 @@ def main(camera_file, dtm_file, output_csv):
         crs=4978
     )
 
-    with rio.open(dtm_file) as src:
-        dtm_crs = src.crs
+    with rio.open(dtm_file) as dtm:
+        dtm_crs = dtm.crs
         # Project to the CRS of the DTM
         DTM_crs_cam_locations = ECEF_cam_locations.to_crs(dtm_crs)
 
@@ -38,7 +38,7 @@ def main(camera_file, dtm_file, output_csv):
         sample_coords = [(pt.x, pt.y) for pt in DTM_crs_cam_locations.geometry]
 
         # Step 4: Sample DTM at these coordinates with masking
-        elevations = list(src.sample(sample_coords, masked=True))
+        elevations = list(dtm.sample(sample_coords, masked=True))
 
     # Verify if at least 90% of the camera points are within the DTM
     num_total = len(elevations)
