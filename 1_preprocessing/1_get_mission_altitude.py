@@ -5,6 +5,7 @@ import geopandas as gpd
 import rasterio as rio
 from shapely.geometry import Point
 from geograypher.cameras import MetashapeCameraSet
+from geograypher.utils.files import ensure_containing_folder
 from geograypher.constants import (
     EXAMPLE_CAMERAS_FILENAME,
     EXAMPLE_DTM_FILE,
@@ -101,6 +102,9 @@ def main(camera_file, dtm_file, output_csv):
 
     # Convert to DataFrame and export as CSV
     summary_df = pd.DataFrame([summary_row])
+
+    # Ensure output directory exists and save the summary
+    ensure_containing_folder(output_csv)
     summary_df.to_csv(output_csv, index=False)
 
     print(f"Summary exported to {output_csv}")
