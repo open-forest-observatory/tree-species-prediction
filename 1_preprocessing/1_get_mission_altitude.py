@@ -11,7 +11,7 @@ from geograypher.constants import (
     EXAMPLE_DTM_FILE,
 )
 
-def main(camera_file, dtm_file, output_csv):
+def main(camera_file, dtm_file, output_csv, verbose):
 
     # Step 1: get camera locations
     camera_set = MetashapeCameraSet(camera_file=camera_file, image_folder="")
@@ -77,7 +77,7 @@ def main(camera_file, dtm_file, output_csv):
     cv = np.std(heights_np) / np.mean(heights_np)
     correlation = np.corrcoef(ground_np, camera_np)[0, 1]  # Get value from the correlation matrix
 
-    if args.verbose:
+    if verbose:
         stats = {
             "count": len(heights_np),
             "mean": np.mean(heights_np),
@@ -117,4 +117,4 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true", help="Print summary statistics to stdout")
 
     args = parser.parse_args()
-    main(args.camera_file, args.dtm_file, args.output_csv)
+    main(**args.__dict__)
