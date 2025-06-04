@@ -14,13 +14,14 @@ DEFAULT_CONFIG = Path(
 IMAGERY_DATASETS_FOLDER = Path(
     "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
 )
+# TODO update these paths
 PROJECT_FOLDER = Path("/ofo-share/repos-david/tree-species-prediction/scratch/projects")
 OUTPUT_FOLDER = Path("/ofo-share/repos-david/tree-species-prediction/scratch/outputs")
 
 
 def produce_combined(nadir_dataset_id, oblique_dataset_id):
     # Find the path to the imagery datasets.
-    # TODO, could be updated to download data from CyVerse
+    # TODO, could be updated to download data from JS2 Object store
     nadir_dataset_path = Path(IMAGERY_DATASETS_FOLDER, nadir_dataset_id)
     oblique_dataset_path = Path(IMAGERY_DATASETS_FOLDER, oblique_dataset_id)
     # Find the sub-folders, corresponding to sub-missions of this dataset
@@ -48,4 +49,4 @@ def produce_combined(nadir_dataset_id, oblique_dataset_id):
 
 if __name__ == "__main__":
     # Test with the two valley missions
-    produce_combined("000337", "000338")
+    produce_combined("000167", "000168")
