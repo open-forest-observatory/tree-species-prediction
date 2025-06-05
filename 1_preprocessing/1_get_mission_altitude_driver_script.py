@@ -7,8 +7,8 @@ from tqdm import tqdm
 # Path to parent remote folder with all missions
 remote = "js2s3:ofo-public/drone/missions_01"
 # Local paths to save outputs
-output_dir = "/ofo-share/scratch-amritha/tree-species-scratch/mission_altitudes"
-failed_log_path = "/ofo-share/scratch-amritha/tree-species-scratch/failed_missions.txt"
+output_dir = "/ofo-share/scratch-amritha/tree-species-scratch/mission_altitudes2"
+failed_log_path = "/ofo-share/scratch-amritha/tree-species-scratch/failed_missions2.txt"
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -18,15 +18,16 @@ failed_missions = []
 # List all folders from remote
 list_cmd = ["rclone", "lsf", remote]
 result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
-folders = [line.strip("/") for line in result.stdout.splitlines() if re.match(r"\d+", line)]
+# Determine mission IDs to evaluate
+mission_ids = [line.strip("/") for line in result.stdout.splitlines() if re.match(r"\d+", line)]
 
 # Iterate through folders
-for folder in tqdm(folders):
-    mission_id = f"{folder}_01"
-    base_remote_path = f"{remote}/{folder}/processed_01/full"
-    camera_file = f"{mission_id}_cameras.xml"
-    dtm_file = f"{mission_id}_dtm-ptcloud.tif"
-    output_csv = os.path.join(output_dir, f"{mission_id}_altitude_summary.csv")
+for mission_id in tqdm(mission_ids):
+    mission_id_folder = f"{mission_id}_01"
+    base_remote_path = f"{remote}/{mission_id}/processed_01/full"
+    camera_file = f"{mission_id_folder}_cameras.xml"
+    dtm_file = f"{mission_id_folder}_dtm-ptcloud.tif"
+    output_csv = os.path.join(output_dir, f"{mission_id_folder}_altitude_summary.csv")
 
     # Skip already processed missions
     if os.path.exists(output_csv):
