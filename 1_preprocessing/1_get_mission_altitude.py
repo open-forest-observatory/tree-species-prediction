@@ -86,7 +86,7 @@ def main(camera_file, dtm_file, output_csv, verbose):
             "max": np.max(heights_np),
             "median": np.median(heights_np),
             "cv": cv,
-            "corr_ground_vs_camera_elevation": correlation
+            "flight_terrain_correlation_photogrammetry": correlation
         }
 
         print("Height above ground summary stats:")
@@ -95,9 +95,9 @@ def main(camera_file, dtm_file, output_csv, verbose):
 
     # Prepare the data as a single-row dictionary
     summary_row = {
-        "mean_height_above_ground": np.mean(heights_np),
-        "cv_height_above_ground": cv,
-        "corr_ground_vs_camera_elevation": correlation
+        "mean_altitude": np.mean(heights_np),
+        "cv_altitude": cv,
+        "flight_terrain_correlation_photogrammetry": correlation
     }
 
     # Convert to DataFrame and export as CSV
