@@ -11,6 +11,7 @@ def compute_CHM(
     dtm_path: Union[str, Path],
     output_chm_path: Union[str, Path],
     resolution: Optional[float] = None,
+    clip_negative: bool = True,
 ):
     """Create a CHM by subtracting the DTM values from the DSM
 
@@ -24,6 +25,8 @@ def compute_CHM(
         resolution (Optional[float], optional):
             Spatial resolution of the CHM in meters. If unset, it will default to the resolution of
             the DSM. Defaults to None.
+        clip_negative (Optional[bool], optional):
+            Set all negative CHM values to 0. Defaults to True.
     """
     # Read the data
     dtm = rioxarray.open_rasterio(dtm_path, masked=True)
