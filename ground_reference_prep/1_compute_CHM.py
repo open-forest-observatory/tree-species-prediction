@@ -29,8 +29,8 @@ def compute_CHM(
     dtm = rioxarray.open_rasterio(dtm_path, masked=True)
     dsm = rioxarray.open_rasterio(dsm_path, masked=True)
 
-    if resolution is not None:
-        # Not resampling should be applied
+    if resolution is None:
+        # No resampling should be applied
         dtm_resampled = dtm
     else:
         if dtm.rio.crs.is_geographic():
