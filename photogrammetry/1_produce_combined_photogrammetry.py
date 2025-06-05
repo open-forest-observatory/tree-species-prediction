@@ -1,22 +1,20 @@
 import sys
 from pathlib import Path
-import tempfile
+
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import (
+    AUTOMATE_METASHAPE_PATH,
+    IMAGERY_DATASETS_FOLDER,
+    PHOTOGRAMMETRY_FOLDER,
+)
 
 # TODO consider other ways to find this location
-sys.path.append("/ofo-share/repos-david/automate-metashape/python")
+sys.path.append(str(Path(AUTOMATE_METASHAPE_PATH, "python")))
 from metashape_workflow_functions import MetashapeWorkflow
 
-# TODO consider whether this can be a default within MetashapeWorkflow
-DEFAULT_CONFIG = Path(
-    "/ofo-share/repos-david/automate-metashape/config/config-base.yml"
-)
-# Input and output processing paths. Could be updated.
-IMAGERY_DATASETS_FOLDER = Path(
-    "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
-)
-# TODO update these paths
-PROJECT_FOLDER = Path("/ofo-share/repos-david/tree-species-prediction/scratch/projects")
-OUTPUT_FOLDER = Path("/ofo-share/repos-david/tree-species-prediction/scratch/outputs")
+# The path to the config file that has the default processing parameters
+DEFAULT_METASHAPE_CONFIG = Path(AUTOMATE_METASHAPE_PATH, "config", "config-base.yml")
 
 
 def produce_combined(nadir_dataset_id, oblique_dataset_id):
@@ -29,9 +27,11 @@ def produce_combined(nadir_dataset_id, oblique_dataset_id):
     oblique_sub_missions = [
         str(f) for f in oblique_dataset_path.glob("*") if f.is_dir()
     ]
-    # Compute the output and project folders
-    output_folder = Path(OUTPUT_FOLDER, f"{nadir_dataset_id}_{oblique_dataset_id}")
-    project_folder = Path(PROJECT_FOLDER, f"{nadir_dataset_id}_{oblique_dataset_id}")
+    paired_id = f"{nadir_dataset_id}_{oblique_dataset_id}"
+
+    project_folder = Path(PHOTOGRAMMETRY_FOLDER, paired_id)
+    output_folder = Path(project_folder, "outputs")
+
     # Build and override dict that will update the base config with run-specific information
     override_dict = {
         "photo_path": nadir_sub_missions,
@@ -42,7 +42,7 @@ def produce_combined(nadir_dataset_id, oblique_dataset_id):
     }
 
     # Construct the workflow
-    workflow = MetashapeWorkflow(DEFAULT_CONFIG, override_dict=override_dict)
+    workflow = MetashapeWorkflow(DEFAULT_METASHAPE_CONFIG, override_dict=override_dict)
     # Run the workflow
     workflow.run()
 
