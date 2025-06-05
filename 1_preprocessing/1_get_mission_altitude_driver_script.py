@@ -47,11 +47,6 @@ for folder in tqdm(folders):
         # Download files to temporary paths
         subprocess.run(["rclone", "copyto", camera_remote, camera_local], check=True)
         subprocess.run(["rclone", "copyto", dtm_remote, dtm_local], check=True)
-
-        # Confirm files exist
-        if not (os.path.exists(camera_local) and os.path.exists(dtm_local)):
-            failed_missions.append((mission_id, "Missing files"))
-            continue
         
         # Run script to get the mission altitude
         subprocess.run([
@@ -61,9 +56,10 @@ for folder in tqdm(folders):
             "--output-csv", output_csv
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    except subprocess.CalledProcessError:
-        # During ValueError when more than 10% of camera points fall outside the DTM extent
-        failed_missions.append((mission_id, "Altitude computation failed"))
+    except Exception as e:
+        # Writes appropriate error to file. This is for missions that have missing files or 
+        # failed computing mission altitude because of the ValueError due to >10% of camera points outside DTM.
+        failed_missions.append((mission_id, f"Error: {str(e)}"))
 
     finally:
         # Clean up temporary files
