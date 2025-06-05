@@ -1,16 +1,18 @@
 import subprocess
-import os
 import re
 import tempfile
+from pathlib import Path
 from tqdm import tqdm
+from constants import ALL_MISSIONS_REMOTE_FOLDER, MISSION_ALTITUDES_FOLDER, MISSIONS_OUTSIDE_DTM_LIST
 
 # Path to parent remote folder with all missions
-remote = "js2s3:ofo-public/drone/missions_01"
-# Local paths to save outputs
-output_dir = "/ofo-share/scratch-amritha/tree-species-scratch/mission_altitudes2"
-failed_log_path = "/ofo-share/scratch-amritha/tree-species-scratch/failed_missions2.txt"
+remote = ALL_MISSIONS_REMOTE_FOLDER
 
-os.makedirs(output_dir, exist_ok=True)
+# Local paths to save outputs
+output_dir = MISSION_ALTITUDES_FOLDER
+failed_log_path = MISSIONS_OUTSIDE_DTM_LIST
+
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # List to track failed missions
 failed_missions = []
@@ -27,10 +29,10 @@ for mission_id in tqdm(mission_ids):
     base_remote_path = f"{remote}/{mission_id}/processed_01/full"
     camera_file = f"{mission_id_folder}_cameras.xml"
     dtm_file = f"{mission_id_folder}_dtm-ptcloud.tif"
-    output_csv = os.path.join(output_dir, f"{mission_id_folder}_altitude_summary.csv")
+    output_csv = output_dir / f"{mission_id_folder}_altitude_summary.csv"
 
     # Skip already processed missions
-    if os.path.exists(output_csv):
+    if output_csv.exists():
         continue
 
     # Remote file paths
@@ -42,19 +44,19 @@ for mission_id in tqdm(mission_ids):
         with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp_camera, \
              tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp_dtm:
 
-            camera_local = tmp_camera.name
-            dtm_local = tmp_dtm.name
+            camera_local = Path(tmp_camera.name)
+            dtm_local = Path(tmp_dtm.name)
 
         # Download files to temporary paths
-        subprocess.run(["rclone", "copyto", camera_remote, camera_local], check=True)
-        subprocess.run(["rclone", "copyto", dtm_remote, dtm_local], check=True)
-        
+        subprocess.run(["rclone", "copyto", camera_remote, str(camera_local)], check=True)
+        subprocess.run(["rclone", "copyto", dtm_remote, str(dtm_local)], check=True)
+
         # Run script to get the mission altitude
         subprocess.run([
             "python", "1_get_mission_altitude.py",
-            "--camera-file", camera_local,
-            "--dtm-file", dtm_local,
-            "--output-csv", output_csv
+            "--camera-file", str(camera_local),
+            "--dtm-file", str(dtm_local),
+            "--output-csv", str(output_csv)
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     except Exception as e:
@@ -66,13 +68,13 @@ for mission_id in tqdm(mission_ids):
         # Clean up temporary files
         for tmp_path in [camera_local, dtm_local]:
             try:
-                os.remove(tmp_path)
+                tmp_path.unlink()
             except FileNotFoundError:
                 pass
 
 # Write failure log
 if failed_missions:
-    with open(failed_log_path, "w") as f:
+    with failed_log_path.open("w") as f:
         for mid, reason in failed_missions:
             f.write(f"{mid},{reason}\n")
     print(f"Some missions failed. See '{failed_log_path}' for details.")
