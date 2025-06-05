@@ -1,11 +1,31 @@
 from pathlib import Path
+from typing import Optional, Union
 
 import numpy as np
 import rioxarray
 from rasterio.enums import Resampling
 
 
-def compute_CHM(dsm_path, dtm_path, output_chm_path, resolution=None):
+def compute_CHM(
+    dsm_path: Union[str, Path],
+    dtm_path: Union[str, Path],
+    output_chm_path: Union[str, Path],
+    resolution: Optional[float] = None,
+):
+    """Create a CHM by subtracting the DTM values from the DSM
+
+    Args:
+        dsm_path (Union[str, Path]):
+            Path to read the DSM from
+        dtm_path (Union[str, Path]):
+            Path to read the DTM from
+        output_chm_path (Union[str, Path]):
+            Path to write the newly-computed CHM to
+        resolution (Optional[float], optional):
+            Spatial resolution of the CHM in meters. If unset, it will default to the resolution of
+            the DTM. Defaults to None.
+    """
+    # Read the data
     dtm = rioxarray.open_rasterio(dtm_path, masked=True)
     dsm = rioxarray.open_rasterio(dsm_path, masked=True)
 
