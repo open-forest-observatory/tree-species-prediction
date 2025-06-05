@@ -33,7 +33,7 @@ def compute_CHM(
         # No resampling should be applied
         dtm_resampled = dtm
     else:
-        if dtm.rio.crs.is_geographic():
+        if dtm.rio.crs.is_geographic:
             raise ValueError(
                 "Reprojection of a geographic CRS to meter units will fail"
             )
