@@ -33,7 +33,10 @@ def compute_CHM(
         # Not resampling should be applied
         dtm_resampled = dtm
     else:
-        # TODO consider a check to ensure the data is in a projected CRS
+        if dtm.rio.crs.is_geographic():
+            raise ValueError(
+                "Reprojection of a geographic CRS to meter units will fail"
+            )
         # Determine the current resolution
         dtm_resolution = dtm.rio.resolution()
         average_res = np.mean(np.abs(dtm_resolution))
