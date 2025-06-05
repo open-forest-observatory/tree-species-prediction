@@ -42,17 +42,26 @@ def compute_CHM(
         average_res = np.mean(np.abs(dtm_resolution))
 
         # Determine the new pixel width and heights
-        upscale_factor = average_res / resolution
-        new_height = int(dtm.rio.height * upscale_factor)
-        new_width = int(dtm.rio.width * upscale_factor)
+        scale_factor = average_res / resolution
+        new_height = int(dtm.rio.height * scale_factor)
+        new_width = int(dtm.rio.width * scale_factor)
 
+        # Use an averaging filter for downsampling and bicubic for upsampling
+        resampling = Resampling.average if scale_factor < 1 else Resampling.cubic
         # Perform the resampling
         dtm_resampled = dtm.rio.reproject(
-            dtm.rio.crs, shape=(new_height, new_width), resampling=Resampling.bilinear
+            dtm.rio.crs, shape=(new_height, new_width), resampling=resampling
         )
 
+    # Determine if the DSM has a higher resolution than the resampled DTM
+    # TODO consider how to make this more robust to data that's in geographic coordinates
+    dsm_higher_resolution = np.mean(np.abs(dsm.rio.resolution())) < np.mean(
+        np.abs(dtm_resampled.rio.resolution())
+    )
+    # If the DSM is higher resolution it will be coarstened, so use averaging. Else use bicubic.
+    resampling = Resampling.average if dsm_higher_resolution else Resampling.cubic
     # Pixel-align the dsm to the DTM
-    dsm_resampled = dsm.rio.reproject_match(dtm_resampled)
+    dsm_resampled = dsm.rio.reproject_match(dtm_resampled, resampling=resampling)
 
     # Subtract the two products
     chm = dsm_resampled - dtm_resampled
