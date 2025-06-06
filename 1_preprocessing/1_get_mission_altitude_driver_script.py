@@ -13,6 +13,8 @@ from constants import (
     MISSIONS_OUTSIDE_DTM_LIST,
 )
 
+MISSION_ALTITUDES_FOLDER.mkdir(parents=True, exist_ok=True)
+
 # List to track failed missions
 failed_missions = []
 
