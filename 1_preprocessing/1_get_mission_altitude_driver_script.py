@@ -13,20 +13,11 @@ from constants import (
     MISSIONS_OUTSIDE_DTM_LIST,
 )
 
-# Path to parent remote folder with all missions
-remote = ALL_MISSIONS_REMOTE_FOLDER
-
-# Local paths to save outputs
-output_dir = MISSION_ALTITUDES_FOLDER
-failed_log_path = MISSIONS_OUTSIDE_DTM_LIST
-
-output_dir.mkdir(parents=True, exist_ok=True)
-
 # List to track failed missions
 failed_missions = []
 
 # List all folders from remote
-list_cmd = ["rclone", "lsf", remote]
+list_cmd = ["rclone", "lsf", ALL_MISSIONS_REMOTE_FOLDER]
 result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
 # Determine mission IDs to evaluate
 mission_ids = [
@@ -36,10 +27,10 @@ mission_ids = [
 # Iterate through folders
 for mission_id in tqdm(mission_ids):
     mission_id_folder = f"{mission_id}_01"
-    base_remote_path = f"{remote}/{mission_id}/processed_01/full"
+    base_remote_path = f"{ALL_MISSIONS_REMOTE_FOLDER}/{mission_id}/processed_01/full"
     camera_file = f"{mission_id_folder}_cameras.xml"
     dtm_file = f"{mission_id_folder}_dtm-ptcloud.tif"
-    output_csv = output_dir / f"{mission_id_folder}_altitude_summary.csv"
+    output_csv = MISSION_ALTITUDES_FOLDER / f"{mission_id_folder}_altitude_summary.csv"
 
     # Skip already processed missions
     if output_csv.exists():
@@ -98,9 +89,9 @@ for mission_id in tqdm(mission_ids):
 
 # Write failure log
 if failed_missions:
-    with failed_log_path.open("w") as f:
+    with MISSIONS_OUTSIDE_DTM_LIST.open("w") as f:
         for mid, reason in failed_missions:
             f.write(f"{mid},{reason}\n")
-    print(f"Some missions failed. See '{failed_log_path}' for details.")
+    print(f"Some missions failed. See '{MISSIONS_OUTSIDE_DTM_LIST}' for details.")
 else:
     print("All missions processed successfully!")
