@@ -41,15 +41,11 @@ for mission_id in tqdm(mission_ids):
     dtm_remote = f"{base_remote_path}/{dtm_file}"
 
     try:
-        # Create temp files
-        with tempfile.NamedTemporaryFile(
-            suffix=".xml", delete=False
-        ) as tmp_camera, tempfile.NamedTemporaryFile(
-            suffix=".tif", delete=False
-        ) as tmp_dtm:
+        tmp_camera = tempfile.NamedTemporaryFile(suffix=".xml")
+        tmp_dtm = tempfile.NamedTemporaryFile(suffix=".tif")
 
-            camera_local = Path(tmp_camera.name)
-            dtm_local = Path(tmp_dtm.name)
+        camera_local = Path(tmp_camera.name)
+        dtm_local = Path(tmp_dtm.name)
 
         # Download files to temporary paths
         subprocess.run(
@@ -78,14 +74,6 @@ for mission_id in tqdm(mission_ids):
         # Writes appropriate error to file. This is for missions that have missing files or
         # failed computing mission altitude because of the ValueError due to >10% of camera points outside DTM.
         failed_missions.append((mission_id, f"Error: {str(e)}"))
-
-    finally:
-        # Clean up temporary files
-        for tmp_path in [camera_local, dtm_local]:
-            try:
-                tmp_path.unlink()
-            except FileNotFoundError:
-                pass
 
 # Write failure log
 if failed_missions:
