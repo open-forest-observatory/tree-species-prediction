@@ -1,9 +1,17 @@
+import sys
 import subprocess
 import re
 import tempfile
 from pathlib import Path
 from tqdm import tqdm
-from constants import ALL_MISSIONS_REMOTE_FOLDER, MISSION_ALTITUDES_FOLDER, MISSIONS_OUTSIDE_DTM_LIST
+
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import (
+    ALL_MISSIONS_REMOTE_FOLDER,
+    MISSION_ALTITUDES_FOLDER,
+    MISSIONS_OUTSIDE_DTM_LIST,
+)
 
 # Path to parent remote folder with all missions
 remote = ALL_MISSIONS_REMOTE_FOLDER
@@ -21,7 +29,9 @@ failed_missions = []
 list_cmd = ["rclone", "lsf", remote]
 result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
 # Determine mission IDs to evaluate
-mission_ids = [line.strip("/") for line in result.stdout.splitlines() if re.match(r"\d+", line)]
+mission_ids = [
+    line.strip("/") for line in result.stdout.splitlines() if re.match(r"\d+", line)
+]
 
 # Iterate through folders
 for mission_id in tqdm(mission_ids):
@@ -41,26 +51,40 @@ for mission_id in tqdm(mission_ids):
 
     try:
         # Create temp files
-        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp_camera, \
-             tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp_dtm:
+        with tempfile.NamedTemporaryFile(
+            suffix=".xml", delete=False
+        ) as tmp_camera, tempfile.NamedTemporaryFile(
+            suffix=".tif", delete=False
+        ) as tmp_dtm:
 
             camera_local = Path(tmp_camera.name)
             dtm_local = Path(tmp_dtm.name)
 
         # Download files to temporary paths
-        subprocess.run(["rclone", "copyto", camera_remote, str(camera_local)], check=True)
+        subprocess.run(
+            ["rclone", "copyto", camera_remote, str(camera_local)], check=True
+        )
         subprocess.run(["rclone", "copyto", dtm_remote, str(dtm_local)], check=True)
 
         # Run script to get the mission altitude
-        subprocess.run([
-            "python", "1_get_mission_altitude.py",
-            "--camera-file", str(camera_local),
-            "--dtm-file", str(dtm_local),
-            "--output-csv", str(output_csv)
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            [
+                "python",
+                "1_get_mission_altitude.py",
+                "--camera-file",
+                str(camera_local),
+                "--dtm-file",
+                str(dtm_local),
+                "--output-csv",
+                str(output_csv),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     except Exception as e:
-        # Writes appropriate error to file. This is for missions that have missing files or 
+        # Writes appropriate error to file. This is for missions that have missing files or
         # failed computing mission altitude because of the ValueError due to >10% of camera points outside DTM.
         failed_missions.append((mission_id, f"Error: {str(e)}"))
 
