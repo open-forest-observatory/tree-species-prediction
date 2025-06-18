@@ -1,53 +1,76 @@
 # %%
-import time
-
-import matplotlib.pyplot as plt
-from tree_detection_framework.detection.detector import GeometricDetector
-from tree_detection_framework.postprocessing.postprocessing import (
-    merge_and_postprocess_detections,
-    multi_region_hole_suppression,
-    multi_region_NMS,
-    single_region_hole_suppression,
-)
+from pathlib import Path
 from tree_detection_framework.preprocessing.preprocessing import (
     create_dataloader,
-    visualize_dataloader,
+    create_intersection_dataloader,
+)
+from tree_detection_framework.detection.detector import (
+    GeometricTreeTopDetector,
+    GeometricTreeCrownDetector,
+)
+from tree_detection_framework.postprocessing.postprocessing import (
+    remove_edge_detections,
+    multi_region_NMS,
 )
 
+RASTER_FOLDER_PATH = "/ofo-share/cv-itd-eval_data/photogrammetry-outputs/emerald-point_10a-20230103T2008/chm.tif"
+CHIP_SIZE = 1024
+CHIP_STRIDE = 800
+OUTPUT_RESOLUTION = 0.2
 
-def detect_tree(
+
+def detect_trees(
     raster_file,
-    save_path,
-    verbose=False,
+    save_folder,
+    chip_size=CHIP_SIZE,
+    chip_stride=CHIP_STRIDE,
+    output_resolution=OUTPUT_RESOLUTION,
 ):
+    # Stage 1: Create a dataloader for the raster data and detect the tree-tops
     dataloader = create_dataloader(
         raster_folder_path=raster_file,
-        chip_size=512,
-        chip_stride=400,
-        batch_size=3,
-        output_resolution=0.2,
+        chip_size=chip_size,
+        chip_stride=chip_stride,
+        output_resolution=output_resolution,
     )
 
-    detector = GeometricDetector(
-        a=0,
-        b=0.11,
-        c=0,
-        res=dataloader.sampler.res,
-        confidence_factor="distance",
-        filter_shape="square",
-        compute_tree_crown=True,
+    treetop_detector = GeometricTreeTopDetector(
+        a=0, b=0.11, c=0, res=output_resolution, confidence_feature="distance"
     )
 
-    predicted_crowns = detector.predict(dataloader)
+    treetop_detections = treetop_detector.predict(dataloader)
 
-    NMS_crowns = multi_region_NMS(predicted_crowns)
+    # TODO some sort of NMS
 
-    NMS_crowns.save(save_path=save_path)
+    treetop_detections = remove_edge_detections(
+        treetop_detections,
+        suppression_distance=(chip_size - chip_stride) * output_resolution / 2,
+    )
+
+    treetop_detections.save(Path(save_folder, "tree_tops.gpkg"))
+
+    # Stage 2: Combine raster and vector data (from the tree-top detector) to create a new dataloader
+    raster_vector_dataloader = create_intersection_dataloader(
+        raster_data=raster_file,
+        vector_data=treetop_detections,
+        chip_size=chip_size,
+        chip_stride=chip_stride,
+        output_resolution=output_resolution,
+    )
+
+    treecrown_detector = GeometricTreeCrownDetector(
+        res=output_resolution, confidence_feature="distance"
+    )
+
+    treecrown_detections = treecrown_detector.predict(raster_vector_dataloader)
+    treecrown_detections = multi_region_NMS(
+        treecrown_detections, confidence_column="score", intersection_method="IOS"
+    )
+    treecrown_detections.save(Path(save_folder, "tree_crowns.gpkg"))
 
 
 if __name__ == "__main__":
-    detect_tree(
-        "/ofo-share/repos-david/tree-species-prediction/scratch/chm_average.tif",
-        "/ofo-share/repos-david/tree-species-prediction/scratch/detected_trees.gpkg",
-        verbose=True,
+    detect_trees(
+        "/ofo-share/repos-david/tree-species-prediction/scratch/chm-mesh_121.tif",
+        "/ofo-share/repos-david/tree-species-prediction/scratch/detected_trees",
     )
