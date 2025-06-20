@@ -172,10 +172,18 @@ def match_field_and_drone_trees(
         right_on="unique_ID",
         how="left",
     )
-    drone_crowns_with_additional_attributes.plot("species", legend=True)
-    plt.show()
-    drone_crowns_with_additional_attributes.plot("live", legend=True)
-    plt.show()
+
+    if True:
+        # More plotting to show that attributes were transfered over
+        f, ax = plt.subplots()
+        drone_crowns_with_additional_attributes.plot("species", legend=True, ax=ax)
+        field_trees.plot("species", ax=ax, edgecolor="k")
+        plt.show()
+
+        f, ax = plt.subplots()
+        drone_crowns_with_additional_attributes.plot("live", legend=True, ax=ax)
+        field_trees.plot("live", ax=ax, edgecolor="k")
+        plt.show()
 
 
 if __name__ == "__main__":
