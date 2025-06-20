@@ -14,58 +14,78 @@ from tree_detection_framework.postprocessing.postprocessing import (
 )
 
 RASTER_FOLDER_PATH = "/ofo-share/cv-itd-eval_data/photogrammetry-outputs/emerald-point_10a-20230103T2008/chm.tif"
-CHIP_SIZE = 1024
-CHIP_STRIDE = 800
-OUTPUT_RESOLUTION = 0.2
+CHIP_SIZE = 512
+CHIP_STRIDE = 400
+RESOLUTION = 0.2
 
 
 def detect_trees(
-    raster_file,
-    save_folder,
-    chip_size=CHIP_SIZE,
-    chip_stride=CHIP_STRIDE,
-    output_resolution=OUTPUT_RESOLUTION,
+    CHM_file: Path,
+    save_folder: Path,
+    chip_size: int = CHIP_SIZE,
+    chip_stride: int = CHIP_STRIDE,
+    resolution: float = RESOLUTION,
 ):
+    """Detect trees geometrically and save the detected tree tops and tree crowns.
+
+    Args:
+        CHM_file (Path):
+            Path to a CHM file to detect trees from
+        save_folder (Path):
+            Where to save the detected tree tops and crowns. Will be created if it doesn't exist.
+        chip_size (int, optional):
+            The size of the chip in pixels. Defaults to CHIP_SIZE.
+        chip_stride (int, optional):
+            The stride of the sliding chip window in pixels. Defaults to CHIP_STRIDE.
+        output_resolution (float, optional):
+            The spatial resolution that the CHM is resampled to. Defaults to OUTPUT_RESOLUTION.
+    """
     # Stage 1: Create a dataloader for the raster data and detect the tree-tops
     dataloader = create_dataloader(
-        raster_folder_path=raster_file,
+        raster_folder_path=CHM_file,
         chip_size=chip_size,
         chip_stride=chip_stride,
-        output_resolution=output_resolution,
+        output_resolution=resolution,
     )
 
+    # Create the detector for variable window maximum detection
     treetop_detector = GeometricTreeTopDetector(
-        a=0, b=0.11, c=0, res=output_resolution, confidence_feature="distance"
+        a=0, b=0.11, c=0, res=resolution, confidence_feature="distance"
     )
 
+    # Generate tree top predictions
     treetop_detections = treetop_detector.predict(dataloader)
 
-    # TODO some sort of NMS
-
+    # Remove the tree tops that were generated in the edges of tiles
     treetop_detections = remove_edge_detections(
         treetop_detections,
-        suppression_distance=(chip_size - chip_stride) * output_resolution / 2,
+        suppression_distance=(chip_size - chip_stride) * resolution / 2,
     )
 
     treetop_detections.save(Path(save_folder, "tree_tops.gpkg"))
 
     # Stage 2: Combine raster and vector data (from the tree-top detector) to create a new dataloader
     raster_vector_dataloader = create_intersection_dataloader(
-        raster_data=raster_file,
+        raster_data=CHM_file,
         vector_data=treetop_detections,
         chip_size=chip_size,
         chip_stride=chip_stride,
-        output_resolution=output_resolution,
+        output_resolution=resolution,
     )
 
+    # Create the crown detector, which is seeded by the tree top points detected in the last step
+    # The score metric is how far from the edge the detection is, which prioritizes central detections
     treecrown_detector = GeometricTreeCrownDetector(
-        res=output_resolution, confidence_feature="distance"
+        res=resolution, confidence_feature="distance"
     )
 
+    # Predict the crowns
     treecrown_detections = treecrown_detector.predict(raster_vector_dataloader)
+    # Suppress overlapping crown predictions. This step can be slow.
     treecrown_detections = multi_region_NMS(
         treecrown_detections, confidence_column="score", intersection_method="IOS"
     )
+    # Save
     treecrown_detections.save(Path(save_folder, "tree_crowns.gpkg"))
 
 
