@@ -25,4 +25,9 @@ PREPROCESSING_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "preprocessing")
 
 # Inputs for first preprocessing step 1_get_mission_altitude.py
 MISSION_ALTITUDES_FOLDER = Path(PREPROCESSING_FOLDER, "mission_altitudes")
-MISSIONS_OUTSIDE_DTM_LIST = Path(PREPROCESSING_FOLDER, "list_of_missions_outside_dtm.txt")
+MISSIONS_OUTSIDE_DTM_LIST = Path(
+    PREPROCESSING_FOLDER, "list_of_missions_outside_dtm.txt"
+)
+
+CHM_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "CHMs")
+TREE_DETECTIONS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "detected_trees")
