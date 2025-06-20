@@ -1,3 +1,4 @@
+import csv
 import sys
 from pathlib import Path
 
@@ -6,6 +7,7 @@ sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
 from constants import (
     AUTOMATE_METASHAPE_PATH,
     IMAGERY_DATASETS_FOLDER,
+    OVERLAPPING_PLOTS_FILE,
     PHOTOGRAMMETRY_FOLDER,
 )
 
@@ -48,5 +50,9 @@ def produce_combined(nadir_dataset_id, oblique_dataset_id):
 
 
 if __name__ == "__main__":
-    # Test with the two valley missions
-    produce_combined("000167", "000168")
+    with open(OVERLAPPING_PLOTS_FILE, "r") as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            mission_id_hn = row[1]
+            mission_id_lo = row[2]
+            produce_combined(mission_id_hn, mission_id_lo)
