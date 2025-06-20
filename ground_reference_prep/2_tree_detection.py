@@ -1,5 +1,5 @@
-# %%
 from pathlib import Path
+import sys
 from tree_detection_framework.preprocessing.preprocessing import (
     create_dataloader,
     create_intersection_dataloader,
@@ -12,6 +12,10 @@ from tree_detection_framework.postprocessing.postprocessing import (
     remove_edge_detections,
     multi_region_NMS,
 )
+
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import CHM_FOLDER, TREE_DETECTIONS_FOLDER
 
 CHIP_SIZE = 512
 CHIP_STRIDE = 400
@@ -87,7 +91,11 @@ def detect_trees(
 
 
 if __name__ == "__main__":
-    detect_trees(
-        "/ofo-share/repos-david/tree-species-prediction/scratch/chm-mesh_121.tif",
-        "/ofo-share/repos-david/tree-species-prediction/scratch/detected_trees",
-    )
+    # List all the CHM files
+    CHM_files = list(CHM_FOLDER.glob("*.tif"))
+
+    for CHM_file in CHM_files:
+        # Since both the tree tops and tree crowns are saved out, we provide an output folder
+        output_folder = Path(TREE_DETECTIONS_FOLDER, CHM_file.stem)
+        # Run tree detection
+        detect_trees(chm_file=CHM_file, save_folder=output_folder)
