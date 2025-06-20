@@ -21,6 +21,9 @@ GROUND_REFERENCE_FOLDER = Path(RAW_FOLDER, "ground-reference")
 ALL_MISSIONS_REMOTE_FOLDER = "js2s3:ofo-public/drone/missions_01"
 
 # Intermediate
+OVERLAPPING_PLOTS_FILE = Path(
+    DATA_ROOT_FOLDER, "intermediate", "ground-plot-drone-mission-matches.csv"
+)
 PHOTOGRAMMETRY_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "photogrammetry")
 PREPROCESSING_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "preprocessing")
 RAW_IMAGE_SETS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "raw_image_sets")
