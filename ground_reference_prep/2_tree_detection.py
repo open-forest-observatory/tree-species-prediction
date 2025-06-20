@@ -13,7 +13,6 @@ from tree_detection_framework.postprocessing.postprocessing import (
     multi_region_NMS,
 )
 
-RASTER_FOLDER_PATH = "/ofo-share/cv-itd-eval_data/photogrammetry-outputs/emerald-point_10a-20230103T2008/chm.tif"
 CHIP_SIZE = 512
 CHIP_STRIDE = 400
 RESOLUTION = 0.2
@@ -45,18 +44,18 @@ def detect_trees(
         raster_folder_path=CHM_file,
         chip_size=chip_size,
         chip_stride=chip_stride,
-        output_resolution=resolution,
+        resolution=resolution,
     )
 
     # Create the detector for variable window maximum detection
     treetop_detector = GeometricTreeTopDetector(
-        a=0, b=0.11, c=0, res=resolution, confidence_feature="distance"
+        a=0, b=0.11, c=0, confidence_feature="distance"
     )
 
     # Generate tree top predictions
     treetop_detections = treetop_detector.predict(dataloader)
 
-    # Remove the tree tops that were generated in the edges of tiles
+    # Remove the tree tops that were generated in the edges of tiles. This is an alternative to NMS.
     treetop_detections = remove_edge_detections(
         treetop_detections,
         suppression_distance=(chip_size - chip_stride) * resolution / 2,
@@ -70,14 +69,12 @@ def detect_trees(
         vector_data=treetop_detections,
         chip_size=chip_size,
         chip_stride=chip_stride,
-        output_resolution=resolution,
+        resolution=resolution,
     )
 
     # Create the crown detector, which is seeded by the tree top points detected in the last step
     # The score metric is how far from the edge the detection is, which prioritizes central detections
-    treecrown_detector = GeometricTreeCrownDetector(
-        res=resolution, confidence_feature="distance"
-    )
+    treecrown_detector = GeometricTreeCrownDetector(confidence_feature="distance")
 
     # Predict the crowns
     treecrown_detections = treecrown_detector.predict(raster_vector_dataloader)
