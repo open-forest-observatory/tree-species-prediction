@@ -66,8 +66,10 @@ def compute_CHM(
 
     # Subtract the two products
     chm = dsm_resampled - dtm_resampled
-    # Set all negative values to zero
-    chm = chm.clip(min=0)
+
+    if clip_negative:
+        # Set all negative values to zero
+        chm = chm.clip(min=0)
 
     # Save to disk
     Path(output_chm_path).parent.mkdir(parents=True, exist_ok=True)
