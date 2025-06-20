@@ -1,3 +1,5 @@
+import sys
+import pandas as pd
 import geopandas as gpd
 from shapely.affinity import translate
 import numpy as np
@@ -6,12 +8,11 @@ from scipy.spatial import KDTree
 import itertools
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from pathlib import Path
 
-
-DETECTED_TREES = (
-    "/ofo-share/repos-david/tree-species-prediction/scratch/detected_trees.gpkg"
-)
-FIELD_TREES = "/ofo-share/repos-david/tree-species-prediction/scratch/field_trees.gpkg"
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import OVERLAPPING_PLOTS_FILE, TREE_DETECTIONS_FOLDER
 
 
 def find_best_shift(
@@ -129,13 +130,19 @@ def align_plot(field_trees_file, drone_trees_file, height_column="score"):
 
 
 if __name__ == "__main__":
-    # Create example data by loading real detected trees, then shifting them to simulate field trees
-    detected_trees = gpd.read_file(DETECTED_TREES)
-    detected_trees.geometry = detected_trees.centroid
-    field_trees = detected_trees.copy()
-    field_trees.geometry = field_trees.geometry.apply(
-        lambda x: translate(x, xoff=-28, yoff=-43)
-    )
-    field_trees.to_file(FIELD_TREES)
+    # Read the pairings between
+    plot_pairings = pd.read_csv(OVERLAPPING_PLOTS_FILE)
+    detected_tree_folders = list(TREE_DETECTIONS_FOLDER.glob("*"))
 
-    align_plot(FIELD_TREES, DETECTED_TREES)
+    for detected_tree_folder in detected_tree_folders:
+        ID = detected_tree_folder.stem
+        high_nadir_ID, low_oblique_ID = ID.split("_")
+
+        # Query the correct row
+        matching_row = plot_pairings.query(
+            "@high_nadir_ID == mission_id_hn and @low_oblique_ID == mission_id_lo"
+        )
+        #
+
+        # use the `plot_id` field to determine the corresponding plot ID
+        # Then point to that file and run this pipeline
