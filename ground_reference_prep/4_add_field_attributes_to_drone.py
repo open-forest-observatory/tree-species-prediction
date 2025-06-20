@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from spatial_utils.geospatial import ensure_projected_CRS
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 # Taken from here:
@@ -89,7 +90,7 @@ def match_trees_singlestratum(
     matched_field_tree_inds = np.array(matched_field_tree_inds)
     matched_drone_tree_inds = np.array(matched_drone_tree_inds)
 
-    if True:
+    if False:
         # Visualize matches
         f, ax = plt.subplots()
         ax.scatter(x=field_tree_points_np[:, 0], y=field_tree_points_np[:, 1], c="r")
@@ -108,7 +109,7 @@ def match_trees_singlestratum(
         ax.add_collection(lc)
 
         plt.show()
-    return matched_field_tree_inds, matched_drone_tree_inds
+    return matched_field_tree_inds.tolist(), matched_drone_tree_inds.tolist()
 
 
 def match_field_and_drone_trees(
@@ -131,11 +132,50 @@ def match_field_and_drone_trees(
 
     # Consider within vs intersects or other options
     drone_trees = drone_trees[drone_trees.within(perim_buff)]
-    drone_crown = drone_crown[drone_crown.intersects(perim_buff)]
+
+    # TODO consider filtering so there are only corresponding field-drone pairs
 
     # Maybe filter some of the short trees
     # Compute the full distance matrix or at least the top n matches
-    match_trees_singlestratum(field_trees=field_trees, drone_trees=drone_trees)
+    matched_field_tree_inds, matched_drone_tree_inds = match_trees_singlestratum(
+        field_trees=field_trees, drone_trees=drone_trees
+    )
+
+    # TODO this information will come from a different source
+    field_trees["species"] = [
+        ["ABCO", "PIPO"][i] for i in np.random.randint(0, 2, len(field_trees))
+    ]
+    field_trees["live"] = [
+        ["live", "dead"][i] for i in np.random.randint(0, 2, len(field_trees))
+    ]
+
+    # Add information to the drone trees based on the field trees
+    # TODO figure out how to add a null string column
+    # TODO figure out which columns need to be copied over
+    drone_trees["species"] = pd.NA
+    drone_trees["live"] = pd.NA
+
+    drone_trees["species"].iloc[matched_drone_tree_inds] = field_trees["species"].iloc[
+        matched_field_tree_inds
+    ]
+    drone_trees["live"].iloc[matched_drone_tree_inds] = field_trees["live"].iloc[
+        matched_field_tree_inds
+    ]
+
+    drone_trees_attributes_to_copy = drone_trees[["species", "live", "unique_ID"]]
+
+    # Do the additional crosswalking to save to the drone crowns by linking with "tree_crown_id"
+    # for the cronws it's treetop_unique_ID and for the tree tops it's unique_ID
+    drone_crowns_with_additional_attributes = drone_crown.merge(
+        drone_trees_attributes_to_copy,
+        left_on="treetop_unique_ID",
+        right_on="unique_ID",
+        how="left",
+    )
+    drone_crowns_with_additional_attributes.plot("species", legend=True)
+    plt.show()
+    drone_crowns_with_additional_attributes.plot("live", legend=True)
+    plt.show()
 
 
 if __name__ == "__main__":
