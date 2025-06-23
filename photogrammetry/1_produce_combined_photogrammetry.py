@@ -40,7 +40,7 @@ def produce_combined(nadir_dataset_id, oblique_dataset_id):
         "photo_path_secondary": oblique_sub_missions,
         "output_path": str(output_folder),
         "project_path": str(project_folder),
-        "run_name": f"{nadir_dataset_id}_{oblique_dataset_id}",
+        "run_name": paired_id,
     }
 
     # Construct the workflow
@@ -52,7 +52,12 @@ def produce_combined(nadir_dataset_id, oblique_dataset_id):
 if __name__ == "__main__":
     with open(OVERLAPPING_PLOTS_FILE, "r") as csvfile:
         reader = csv.reader(csvfile)
+
+        # Skip the header line
+        next(reader)
+        # Iterate over the data
         for row in reader:
-            mission_id_hn = row[1]
-            mission_id_lo = row[2]
+            # Zero pad the mission ID to six places
+            mission_id_hn = f"{int(row[1]):06}"
+            mission_id_lo = f"{int(row[2]):06}"
             produce_combined(mission_id_hn, mission_id_lo)
