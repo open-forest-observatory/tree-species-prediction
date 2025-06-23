@@ -82,6 +82,7 @@ def compute_CHM(
 
 
 if __name__ == "__main__":
+    breakpoint()
     # List all the folders, corresponding to photogrammetry for a nadir-oblique pair
     photogrammetry_run_folders = PHOTOGRAMMETRY_FOLDER.glob("*_*")
     # Iterate over the folders
@@ -93,8 +94,15 @@ if __name__ == "__main__":
         photogrammetry_products_folder = Path(photogrammetry_run_folder, "outputs")
         # There should be only one file with the corresponding ending, but the first part is a
         # timestamp that is unknown
-        dsm_file = list(photogrammetry_products_folder.glob("*_dsm.tif"))[0]
-        dtm_file = list(photogrammetry_products_folder.glob("*_dtm.tif"))[0]
+        # TODO is this the best DSM to use?
+        dsm_files = list(photogrammetry_products_folder.glob("*_dsm-ptcloud.tif"))
+        dtm_files = list(photogrammetry_products_folder.glob("*_dtm-ptcloud.tif"))
+
+        if len(dsm_files) != 1 or len(dtm_files) != 1:
+            continue
+
+        dsm_file = dsm_files[0]
+        dtm_file = dtm_files[0]
 
         # All the outputs will be saved to one folder
         output_chm_path = Path(CHM_FOLDER, f"{run_ID}.tif")
