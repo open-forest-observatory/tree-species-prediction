@@ -97,7 +97,6 @@ def make_photogrammetry_run_scripts(n_chunks=4):
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
     # List all the imagery folders
     imagery_sets = RAW_IMAGE_SETS_FOLDER.glob("*")
     # For each folder, produce the corresponding config
@@ -106,11 +105,3 @@ if __name__ == "__main__":
 
     # Create scripts that can be run on multiple machines to sequentially run projects
     make_photogrammetry_run_scripts()
-=======
-    with open(OVERLAPPING_PLOTS_FILE, "r") as csvfile:
-        reader = csv.reader(csvfile)
-        for row in reader:
-            mission_id_hn = row[1]
-            mission_id_lo = row[2]
-            produce_combined(mission_id_hn, mission_id_lo)
->>>>>>> 4247eb4 (Run photogrammetry on all pairs of datasets)
