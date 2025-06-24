@@ -132,13 +132,12 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
 
     ground_ref_plots_gdf['survey_date_parsed'] = ground_ref_plots_gdf['survey_date'].apply(parse_survey_date)
 
+    # TODO: Confirm if it right to use the high-nadir geometry from the pair to compare with ground geometry
+    paired_drone_missions_gdf = gpd.GeoDataFrame(paired_drone_missions_gdf, geometry='geometry_hn')
+    paired_drone_missions_gdf.to_crs(3310, inplace=True)  # Project to meters-based CRS
+
     # Set drone_date to the later date of the two missions in the pair
     paired_drone_missions_gdf['drone_date'] = pd.to_datetime(paired_drone_missions_gdf[['date_hn', 'date_lo']].max(axis=1))
-
-    # Set active geometry and CRS
-    # TODO: Confirm if it right to use the high-nadir geometry from the pair to compare with ground geometry
-    paired_drone_missions_gdf.set_geometry('geometry_hn', inplace=True)
-    paired_drone_missions_gdf.to_crs(3310, inplace=True)
 
     # Project ground reference plots to the same CRS as the drone missions
     ground_ref_plots_gdf.to_crs(paired_drone_missions_gdf.crs, inplace=True)
