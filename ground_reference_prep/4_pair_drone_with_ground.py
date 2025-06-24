@@ -93,6 +93,11 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
         how='cross',
         suffixes=('_hn', '_lo')
     )
+    # Create a new column with the intersection of both mission's geometries
+    paired['geometry'] = paired.apply(
+        lambda row: row['geometry_hn'].intersection(row['geometry_lo']),
+        axis=1
+    )
 
     # Filter pairs by date of collection.
     def is_valid_pair(row):
@@ -132,8 +137,8 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
 
     ground_ref_plots_gdf['survey_date_parsed'] = ground_ref_plots_gdf['survey_date'].apply(parse_survey_date)
 
-    # TODO: Confirm if it right to use the high-nadir geometry from the pair to compare with ground geometry
-    paired_drone_missions_gdf = gpd.GeoDataFrame(paired_drone_missions_gdf, geometry='geometry_hn')
+    # Convert to GeoDataFrame with geometry column as intersection of drone mission geometries
+    paired_drone_missions_gdf = gpd.GeoDataFrame(paired_drone_missions_gdf, geometry='geometry', crs=high_nadir.crs)
     paired_drone_missions_gdf.to_crs(3310, inplace=True)  # Project to meters-based CRS
 
     # Set drone_date to the later date of the two missions in the pair
