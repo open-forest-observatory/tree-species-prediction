@@ -87,22 +87,13 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     high_nadir = valid_missions[valid_missions['mission_type'] == 'high-nadir'].copy()
     low_oblique = valid_missions[valid_missions['mission_type'] == 'low-oblique'].copy()
 
-    # Create all possible pairs. This will create a Cartesian product of the two DataFrames
-    paired = high_nadir.merge(
-        low_oblique,
-        how='cross',
-        suffixes=('_hn', '_lo')
-    )
-    # Create a new column with the intersection of both mission's geometries
-    paired['geometry'] = paired.apply(
-        lambda row: row['geometry_hn'].intersection(row['geometry_lo']),
-        axis=1
-    )
+    # Create all possible pairs that spatially overlap
+    paired = gpd.overlay(high_nadir, low_oblique, how="intersection", keep_geom_type=False)
 
     # Filter pairs by date of collection.
     def is_valid_pair(row):
-        delta = abs(row['date_hn'] - row['date_lo'])
-        same_year = row['date_hn'].year == row['date_lo'].year
+        delta = abs(row['date_1'] - row['date_2'])
+        same_year = row['date_1'].year == row['date_2'].year
         within_6_months = delta.days <= 183  # ~6 months
         return same_year or within_6_months
 
@@ -114,14 +105,14 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     # For now, drop duplicates based on high-nadir mission, retaining the pair with shortest date difference
 
     # Calculate absolute date difference
-    paired_valid['date_diff_days'] = (paired_valid['date_hn'] - paired_valid['date_lo']).abs().dt.days
+    paired_valid['date_diff_days'] = (paired_valid['date_1'] - paired_valid['date_2']).abs().dt.days
 
     # Sort so smaller date differences come first
     paired_valid_sorted = paired_valid.sort_values('date_diff_days')
 
     # Drop duplicates based on high-nadir mission, keeping only closest match
     # Note: This can have the same low-oblique mission matched to multiple high-nadir missions
-    paired_drone_missions_gdf = paired_valid_sorted.drop_duplicates(subset='mission_id_hn', keep='first')
+    paired_drone_missions_gdf = paired_valid_sorted.drop_duplicates(subset='mission_id_1', keep='first')
 
     # Next, pair ground reference plots with the drone missions pairs
     # Convert survey_date to datetime, handling various formats
@@ -138,11 +129,10 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     ground_ref_plots_gdf['survey_date_parsed'] = ground_ref_plots_gdf['survey_date'].apply(parse_survey_date)
 
     # Convert to GeoDataFrame with geometry column as intersection of drone mission geometries
-    paired_drone_missions_gdf = gpd.GeoDataFrame(paired_drone_missions_gdf, geometry='geometry', crs=high_nadir.crs)
-    paired_drone_missions_gdf.to_crs(3310, inplace=True)  # Project to meters-based CRS
+    paired_drone_missions_gdf.to_crs(32610, inplace=True)  # Project to meters-based CRS
 
     # Set drone_date to the later date of the two missions in the pair
-    paired_drone_missions_gdf['drone_date'] = pd.to_datetime(paired_drone_missions_gdf[['date_hn', 'date_lo']].max(axis=1))
+    paired_drone_missions_gdf['drone_date'] = pd.to_datetime(paired_drone_missions_gdf[['date_1', 'date_2']].max(axis=1))
 
     # Project ground reference plots to the same CRS as the drone missions
     ground_ref_plots_gdf.to_crs(paired_drone_missions_gdf.crs, inplace=True)
@@ -164,10 +154,10 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
 
     ground_plot_drone_missions_matches = valid_pairs[[
         'plot_id',
-        'mission_id_hn',
-        'mission_id_lo',
-        'date_hn',
-        'date_lo',
+        'mission_id_1',
+        'mission_id_2',
+        'date_1',
+        'date_2',
         'survey_date_parsed',
         'year_diff',
         'geometry'  # this is the ground plot geometry
