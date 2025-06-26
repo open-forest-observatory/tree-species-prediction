@@ -28,6 +28,11 @@ MISSION_ALTITUDES_FOLDER = Path(PREPROCESSING_FOLDER, "mission_altitudes")
 MISSIONS_OUTSIDE_DTM_LIST = Path(
     PREPROCESSING_FOLDER, "list_of_missions_outside_dtm.txt"
 )
+# Inputs for 4_pair_drone_with_ground.py
+GROUND_REFERENCE_PLOTS_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-reference_plots.gpkg")
+DRONE_MISSIONS_WITH_ALT_FILE = Path(PREPROCESSING_FOLDER, "ofo-all-missions-metadata-with-altitude.gpkg")
+
+GROUND_PLOT_DRONE_MISSION_MATCHES_FILE = Path(DATA_ROOT_FOLDER, "intermediate", "ground_plot_drone_mission_matches.csv")
 
 CHM_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "CHMs")
 TREE_DETECTIONS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "detected_trees")

@@ -1,11 +1,16 @@
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+from pathlib import Path
+import sys
 
-
-DRONE_MISSIONS_WITH_ALT = "/ofo-share/scratch-amritha/tree-species-scratch/ofo-all-missions-metadata-with-altitude.gpkg"
-GROUND_REFERENCE_PLOTS = "/ofo-share/species-prediction-project/raw/ground-reference/ofo_ground-reference_plots.gpkg"
-OUTPUT_SAVE_PATH = "/ofo-share/scratch-amritha/tree-species-scratch/ground-reference-drone-missions-pairs.gpkg"
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import (
+    DRONE_MISSIONS_WITH_ALT_FILE,
+    GROUND_REFERENCE_PLOTS_FILE,
+    GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
+)
 
 def classify_mission(row):
     altitude = row['mean_altitude']
@@ -162,13 +167,13 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     print(ground_plot_drone_missions_matches)
 
     # Save to file
-    ground_plot_drone_missions_matches.to_file(OUTPUT_SAVE_PATH)
+    ground_plot_drone_missions_matches.to_file(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
 
 
 if __name__ == "__main__":
     # Read file with all drone missions metadata, including computed altitude values
-    drone_missions_gdf = gpd.read_file(DRONE_MISSIONS_WITH_ALT)
+    drone_missions_gdf = gpd.read_file(DRONE_MISSIONS_WITH_ALT_FILE)
     # Read ground reference plots
-    ground_ref_plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS)
+    ground_ref_plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)
 
     pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gdf)
