@@ -51,16 +51,18 @@ def extract_min_overlap(val):
         return float(val)
     except ValueError:
         return np.nan
-    
 
-def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gdf):
+
+def pair_drone_missions(drone_missions_gdf):
     """ 
-    First create high-nadir and low-oblique drone mission pairs based on criteria, 
-    then pair them with ground reference plots.
+    Classify drone missions into high-nadir and low-oblique based on criteria,
+    then pair them based on spatial overlap and date of collection.
 
     Args:
         drone_missions_gdf (gpd.GeoDataFrame): GeoDataFrame containing drone missions metadata
-        ground_ref_plots_gdf (gpd.GeoDataFrame): GeoDataFrame containing ground reference plots
+    
+    Returns:
+        gpd.GeoDataFrame: Paired drone missions with spatial and temporal criteria met
     """
     # Convert columns to numeric, handling errors and occurances of double overlap values
     drone_missions_gdf['overlap_front_nominal'] = drone_missions_gdf['overlap_front_nominal'].apply(extract_min_overlap)
@@ -115,8 +117,20 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     # Note: This can have the same high-nadir mission matched to multiple low-oblique missions
     paired_drone_missions_gdf = paired_valid_sorted.drop_duplicates(subset='mission_id_2', keep='first')
 
-    # Next, pair ground reference plots with the drone missions pairs
-    # Convert survey_date to datetime, handling various formats
+    return paired_drone_missions_gdf
+
+def match_ground_plots_with_drone_missions(paired_drone_missions_gdf, ground_ref_plots_gdf):
+    """ 
+    Match ground reference plots with drone missions pairs based on spatial overlap and date.
+
+    Args:
+        paired_drone_missions_gdf (gpd.GeoDataFrame): GeoDataFrame containing paired drone missions
+        ground_ref_plots_gdf (gpd.GeoDataFrame): GeoDataFrame containing ground reference plots
+    
+    Returns:
+        gpd.GeoDataFrame: Ground reference plots matched with drone missions
+    """
+     # Convert survey_date to datetime, handling various formats
     def parse_survey_date(val):
         s = str(int(val)) if pd.notna(val) else ""
         if len(s) == 4:
@@ -162,7 +176,6 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     }
     valid_pairs.rename(columns=paired_columns_rename, inplace=True)
 
-
     ground_plot_drone_missions_matches = valid_pairs[[
         'plot_id',
         'mission_id_hn',
@@ -173,11 +186,7 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
         'year_diff',
     ]].reset_index(drop=True)
 
-    print(ground_plot_drone_missions_matches)
-
-    # Save to file
-    ground_plot_drone_missions_matches.to_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
-
+    return ground_plot_drone_missions_matches
 
 if __name__ == "__main__":
     # Read file with all drone missions metadata, including computed altitude values
@@ -185,4 +194,8 @@ if __name__ == "__main__":
     # Read ground reference plots
     ground_ref_plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)
 
-    pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gdf)
+    paired_drone_missions_gdf = pair_drone_missions(drone_missions_gdf)
+    ground_plot_drone_missions_matches = match_ground_plots_with_drone_missions(paired_drone_missions_gdf, ground_ref_plots_gdf)
+
+    # Save to file
+    ground_plot_drone_missions_matches.to_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
