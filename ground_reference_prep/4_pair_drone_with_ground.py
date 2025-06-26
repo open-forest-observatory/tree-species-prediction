@@ -75,12 +75,12 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     # Condition: needs to be collected less than 6 months apart OR in same calendar year
 
     # Convert date column to datetime
-    drone_missions_gdf['date'] = pd.to_datetime(drone_missions_gdf['date'], errors='coerce')
+    drone_missions_gdf['earliest_date_derived'] = pd.to_datetime(drone_missions_gdf['earliest_date_derived'], errors='coerce')
 
     # Drop rows with unknown mission_type or missing date
     valid_missions = drone_missions_gdf[
         drone_missions_gdf['mission_type'].isin(['high-nadir', 'low-oblique']) & 
-        drone_missions_gdf['date'].notna()
+        drone_missions_gdf['earliest_date_derived'].notna()
     ].copy()
 
     # Split into two groups
@@ -92,8 +92,8 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
 
     # Filter pairs by date of collection.
     def is_valid_pair(row):
-        delta = abs(row['date_1'] - row['date_2'])
-        same_year = row['date_1'].year == row['date_2'].year
+        delta = abs(row['earliest_date_derived_1'] - row['earliest_date_derived_2'])
+        same_year = row['earliest_date_derived_1'].year == row['earliest_date_derived_2'].year
         within_6_months = delta.days <= 183  # ~6 months
         return same_year or within_6_months
 
@@ -105,7 +105,7 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     # For now, drop duplicates based on high-nadir mission, retaining the pair with shortest date difference
 
     # Calculate absolute date difference
-    paired_valid['date_diff_days'] = (paired_valid['date_1'] - paired_valid['date_2']).abs().dt.days
+    paired_valid['date_diff_days'] = (paired_valid['earliest_date_derived_1'] - paired_valid['earliest_date_derived_2']).abs().dt.days
 
     # Sort so smaller date differences come first
     paired_valid_sorted = paired_valid.sort_values('date_diff_days')
@@ -132,7 +132,7 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     paired_drone_missions_gdf.to_crs(32610, inplace=True)  # Project to meters-based CRS
 
     # Set drone_date to the later date of the two missions in the pair
-    paired_drone_missions_gdf['drone_date'] = pd.to_datetime(paired_drone_missions_gdf[['date_1', 'date_2']].max(axis=1))
+    paired_drone_missions_gdf['drone_date'] = pd.to_datetime(paired_drone_missions_gdf[['earliest_date_derived_1', 'earliest_date_derived_2']].max(axis=1))
 
     # Project ground reference plots to the same CRS as the drone missions
     ground_ref_plots_gdf.to_crs(paired_drone_missions_gdf.crs, inplace=True)
