@@ -104,8 +104,6 @@ def pair_drone_missions(drone_missions_gdf):
     )
 
     # Next, we need to create pairs of high-nadir and low-oblique missions based on year
-    # Condition: needs to be collected less than 6 months apart OR in same calendar year
-
     # Convert date column to datetime
     drone_missions_gdf["earliest_date_derived"] = pd.to_datetime(
         drone_missions_gdf["earliest_date_derived"], errors="coerce"
@@ -128,13 +126,12 @@ def pair_drone_missions(drone_missions_gdf):
     )
 
     # Filter pairs by date of collection.
+    # Condition: needs to be collected within same calendar year
     def is_valid_pair(row):
-        delta = abs(row["earliest_date_derived_1"] - row["earliest_date_derived_2"])
         same_year = (
             row["earliest_date_derived_1"].year == row["earliest_date_derived_2"].year
         )
-        within_6_months = delta.days <= 183  # ~6 months
-        return same_year or within_6_months
+        return same_year
 
     paired_valid = paired[paired.apply(is_valid_pair, axis=1)].reset_index(drop=True)
 
