@@ -132,7 +132,7 @@ def match_ground_plots_with_drone_missions(paired_drone_missions_gdf, ground_ref
     def parse_survey_date(val):
         s = str(int(val)) if pd.notna(val) else ""
         if len(s) == 4:
-            return pd.to_datetime(s + "-01-01")
+            return pd.to_datetime(s + "-07-01")
         elif len(s) == 6:
             return pd.to_datetime(s, format="%Y%m")
         elif len(s) == 8:
