@@ -47,10 +47,8 @@ def extract_min_overlap(val):
         return np.nan
     if isinstance(val, str) and ',' in val:
         return min(float(x.strip()) for x in val.split(','))
-    try:
-        return float(val)
-    except ValueError:
-        return np.nan
+    # Return single values after converting to float
+    return float(val)
 
 
 def pair_drone_missions(drone_missions_gdf):
