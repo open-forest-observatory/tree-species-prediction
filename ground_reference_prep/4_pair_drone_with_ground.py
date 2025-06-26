@@ -153,21 +153,30 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     joined['year_diff'] = (joined['drone_date'].dt.year - joined['survey_date_parsed'].dt.year).abs()
     valid_pairs = joined[joined['year_diff'] <= 8]
 
+    # Rename _1 to _hn and _2 to _lo
+    paired_columns_rename = {
+        'mission_id_1': 'mission_id_hn',
+        'mission_id_2': 'mission_id_lo',
+        'earliest_date_derived_1': 'earliest_date_derived_hn',
+        'earliest_date_derived_2': 'earliest_date_derived_lo'
+    }
+    valid_pairs.rename(columns=paired_columns_rename, inplace=True)
+
+
     ground_plot_drone_missions_matches = valid_pairs[[
         'plot_id',
-        'mission_id_1',
-        'mission_id_2',
-        'date_1',
-        'date_2',
+        'mission_id_hn',
+        'mission_id_lo',
+        'earliest_date_derived_hn',
+        'earliest_date_derived_lo',
         'survey_date_parsed',
         'year_diff',
-        'geometry'  # this is the ground plot geometry
     ]].reset_index(drop=True)
 
     print(ground_plot_drone_missions_matches)
 
     # Save to file
-    ground_plot_drone_missions_matches.to_file(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
+    ground_plot_drone_missions_matches.to_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
 
 
 if __name__ == "__main__":
