@@ -88,6 +88,7 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
     low_oblique = valid_missions[valid_missions['mission_type'] == 'low-oblique'].copy()
 
     # Create all possible pairs that spatially overlap
+    # Note: after this step, keys from high-nadir will be suffixed with _1 and low-oblique with _2
     paired = gpd.overlay(high_nadir, low_oblique, how="intersection", keep_geom_type=False)
 
     # Filter pairs by date of collection.
@@ -99,20 +100,15 @@ def pair_drone_missions_and_ground_plots(drone_missions_gdf, ground_ref_plots_gd
 
     paired_valid = paired[paired.apply(is_valid_pair, axis=1)].reset_index(drop=True)
 
-    # This will give us a DataFrame with pairs of high-nadir and low-oblique missions
-    # however, there can be multiple matches for the same high-nadir mission and vice versa.
-    # TODO: Decide how to handle this, e.g., keep all pairs or have one-to-one matches.
-    # For now, drop duplicates based on high-nadir mission, retaining the pair with shortest date difference
-
     # Calculate absolute date difference
     paired_valid['date_diff_days'] = (paired_valid['earliest_date_derived_1'] - paired_valid['earliest_date_derived_2']).abs().dt.days
 
-    # Sort so smaller date differences come first
+    # Sort so pairs with smaller date differences b/w missions come first
     paired_valid_sorted = paired_valid.sort_values('date_diff_days')
 
-    # Drop duplicates based on high-nadir mission, keeping only closest match
-    # Note: This can have the same low-oblique mission matched to multiple high-nadir missions
-    paired_drone_missions_gdf = paired_valid_sorted.drop_duplicates(subset='mission_id_1', keep='first')
+    # Only use each low-oblique mission once, retaining the pair with the closest (in time) nadir mission to it
+    # Note: This can have the same high-nadir mission matched to multiple low-oblique missions
+    paired_drone_missions_gdf = paired_valid_sorted.drop_duplicates(subset='mission_id_2', keep='first')
 
     # Next, pair ground reference plots with the drone missions pairs
     # Convert survey_date to datetime, handling various formats
