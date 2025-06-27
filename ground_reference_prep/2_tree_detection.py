@@ -92,10 +92,11 @@ def detect_trees(
 
 if __name__ == "__main__":
     # List all the CHM files
-    CHM_files = list(CHM_FOLDER.glob("*.tif"))
+    CHM_files = sorted(CHM_FOLDER.glob("*.tif"))
 
     for CHM_file in CHM_files:
+        print(f"Detecting trees for {CHM_file}")
         # Since both the tree tops and tree crowns are saved out, we provide an output folder
         output_folder = Path(TREE_DETECTIONS_FOLDER, CHM_file.stem)
         # Run tree detection
-        detect_trees(chm_file=CHM_file, save_folder=output_folder)
+        detect_trees(CHM_file=CHM_file, save_folder=output_folder)
