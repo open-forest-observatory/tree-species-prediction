@@ -16,15 +16,19 @@ IMAGERY_DATASETS_FOLDER = Path(
 RAW_FOLDER = Path(DATA_ROOT_FOLDER, "raw")
 GROUND_REFERENCE_FOLDER = Path(RAW_FOLDER, "ground-reference")
 
+GROUND_REFERENCE_PLOTS_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-reference_plots.gpkg")
+GROUND_REFERENCE_TREES_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-reference_trees.gpkg")
+
 # Path to parent remote folder with all missions
 ALL_MISSIONS_REMOTE_FOLDER = "js2s3:ofo-public/drone/missions_01"
 
 # Intermediate
+INTERMEDIATE_DATA_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate",)
 OVERLAPPING_PLOTS_FILE = Path(
-    DATA_ROOT_FOLDER, "intermediate", "ground-plot-drone-mission-matches.csv"
+    INTERMEDIATE_DATA_FOLDER, "ground_plot_drone_mission_matches.csv"
 )
-PHOTOGRAMMETRY_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "photogrammetry")
-PREPROCESSING_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "preprocessing")
+PHOTOGRAMMETRY_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "photogrammetry")
+PREPROCESSING_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "preprocessing")
 
 # Inputs for first preprocessing step 1_get_mission_altitude.py
 MISSION_ALTITUDES_FOLDER = Path(PREPROCESSING_FOLDER, "mission_altitudes")
@@ -32,5 +36,6 @@ MISSIONS_OUTSIDE_DTM_LIST = Path(
     PREPROCESSING_FOLDER, "list_of_missions_outside_dtm.txt"
 )
 
-CHM_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "CHMs")
-TREE_DETECTIONS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "detected_trees")
+CHM_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "CHMs")
+TREE_DETECTIONS_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "detected_trees")
+SHIFTED_DRONE_TREES_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "shifted_drone_trees")
