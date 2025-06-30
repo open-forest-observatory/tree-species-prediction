@@ -84,7 +84,7 @@ def remove_unfiltered_images(metadata_gdf, folder: Path):
                 file.unlink()
 
 
-def process_mission(mission_id: int, role: str, parent_folder: Path, combined_intersection):
+def process_mission(mission_id, role, parent_folder, combined_intersection):
     mission_str = pad_id(mission_id)
     subfolder = parent_folder / role
     subfolder.mkdir(parents=True, exist_ok=True)
@@ -96,7 +96,10 @@ def process_mission(mission_id: int, role: str, parent_folder: Path, combined_in
     # Filter metadata
     meta_path = subfolder / f"{mission_str}_image-metadata.gpkg"
     gdf = gpd.read_file(meta_path)
+    original_crs = gdf.crs
+    gdf.to_crs(32610, inplace=True)
     filtered = gdf[gdf.geometry.within(combined_intersection)]
+    filtered.to_crs(original_crs, inplace=True)
     filtered.to_file(meta_path, driver="GPKG")
     print(f"{role.capitalize()}: saved {len(filtered)} filtered points to {meta_path.name}")
 
@@ -115,10 +118,12 @@ def main():
     parent_folder.mkdir(parents=True, exist_ok=True)
 
     mission_meta = gpd.read_file(MISSION_META_GPKG)
+    mission_meta.to_crs(32610, inplace=True)
     hn_geom = get_mission_geom(mission_meta, hn_id)
     lo_geom = get_mission_geom(mission_meta, lo_id)
 
     plots_gdf = gpd.read_file(GROUND_PLOT_GPKG)
+    plots_gdf.to_crs(32610, inplace=True)
     raw_plot_geom = get_plot_geom(plots_gdf, plot_id)
     buffered_plot = buffer_plot_geom(raw_plot_geom, buffer_distance=100)
 
