@@ -1,7 +1,6 @@
 import pandas as pd
 import geopandas as gpd
-from shapely.geometry import MultiPolygon, Polygon
-from shapely.ops import unary_union
+from shapely.geometry import MultiPolygon
 from pathlib import Path
 from tqdm import tqdm
 import subprocess
