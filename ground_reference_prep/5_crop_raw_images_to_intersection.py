@@ -6,14 +6,16 @@ from pathlib import Path
 from tqdm import tqdm
 import subprocess
 import os
+import sys
 
-# Paths
-MATCH_CSV = "/ofo-share/species-prediction-project/intermediate/ground_plot_drone_mission_matches.csv"
-MISSION_META_GPKG = "/ofo-share/species-prediction-project/intermediate/preprocessing/ofo-all-missions-metadata-with-altitude.gpkg"
-GROUND_PLOT_GPKG = "/ofo-share/species-prediction-project/raw/ground-reference/ofo_ground-reference_plots.gpkg"
-OUTPUT_ROOT = "/ofo-share/scratch-amritha/tree-species-scratch/cropped_raw_images/"
-REMOTE_STORE = "js2s3:ofo-public/drone/missions_01"
-RAW_IMAGES_ROOT = "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import (GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
+                       DRONE_MISSIONS_WITH_ALT_FILE,
+                       GROUND_REFERENCE_PLOTS_FILE,
+                       RAW_IMAGE_SETS_FOLDER,
+                       ALL_MISSIONS_REMOTE_FOLDER,
+                       DRONE_IMAGES_ROOT)
 
 
 def buffer_plot_geom(geom, buffer_distance=100):
@@ -45,13 +47,13 @@ def get_plot_geom(gdf: gpd.GeoDataFrame, plot_id):
 
 
 def download_image_metadata(mission_id: str, dest_folder: Path):
-    src = f"{REMOTE_STORE}/{mission_id}/metadata-images/{mission_id}_image-metadata.gpkg"
+    src = f"{ALL_MISSIONS_REMOTE_FOLDER}/{mission_id}/metadata-images/{mission_id}_image-metadata.gpkg"
     dest = dest_folder / f"{mission_id}_image-metadata.gpkg"
     subprocess.run(["rclone", "copyto", src, str(dest)], check=True)
     print(f"Downloaded metadata for {mission_id}")
 
 
-def create_hardlinks_for_images(filtered_gdf, dest_folder, raw_images_root=Path(RAW_IMAGES_ROOT)):
+def create_hardlinks_for_images(filtered_gdf, dest_folder, raw_images_root=DRONE_IMAGES_ROOT):
     for rel_path_str in filtered_gdf["image_path_ofo"]:
         rel_path = Path(rel_path_str)  # relative path like '001307/001307-02/00/001307-02_000010.JPG'
         src = raw_images_root / rel_path
@@ -88,10 +90,10 @@ def process_mission(mission_id, mission_type, parent_folder, combined_intersecti
 
 
 def main():
-    df = pd.read_csv(MATCH_CSV)
+    df = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
     # Project to meters-based CRS
-    mission_meta = gpd.read_file(MISSION_META_GPKG).to_crs(32610)
-    plots_gdf = gpd.read_file(GROUND_PLOT_GPKG).to_crs(32610)
+    mission_meta = gpd.read_file(DRONE_MISSIONS_WITH_ALT_FILE).to_crs(32610)
+    plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE).to_crs(32610)
 
     for _, row in tqdm(df.iterrows(), total=len(df)):
         plot_id = row["plot_id"]
@@ -99,7 +101,7 @@ def main():
         lo_id = int(row["mission_id_lo"])
 
         # Create parent folder as plotID_nadirmissionID_obliquemissionID
-        parent_folder = Path(OUTPUT_ROOT) / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
+        parent_folder = Path(RAW_IMAGE_SETS_FOLDER) / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
         parent_folder.mkdir(parents=True, exist_ok=True)
 
         # Get drone mission geometry polygons

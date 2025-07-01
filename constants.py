@@ -22,6 +22,7 @@ ALL_MISSIONS_REMOTE_FOLDER = "js2s3:ofo-public/drone/missions_01"
 # Intermediate
 PHOTOGRAMMETRY_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "photogrammetry")
 PREPROCESSING_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "preprocessing")
+RAW_IMAGE_SETS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "raw_image_sets")
 
 # Inputs for first preprocessing step 1_get_mission_altitude.py
 MISSION_ALTITUDES_FOLDER = Path(PREPROCESSING_FOLDER, "mission_altitudes")
@@ -36,3 +37,5 @@ GROUND_PLOT_DRONE_MISSION_MATCHES_FILE = Path(DATA_ROOT_FOLDER, "intermediate", 
 
 CHM_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "CHMs")
 TREE_DETECTIONS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "detected_trees")
+
+DRONE_IMAGES_ROOT = Path("/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted")
