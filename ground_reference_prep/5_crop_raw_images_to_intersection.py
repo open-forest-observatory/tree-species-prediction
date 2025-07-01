@@ -16,31 +16,25 @@ REMOTE_STORE = "js2s3:ofo-public/drone/missions_01"
 RAW_IMAGES_ROOT = "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
 
 
-def pad_id(mission_id: int) -> str:
-    return f"{mission_id:06d}"
-
-
-def unwrap_if_single_multipolygon(geom):
-    if isinstance(geom, MultiPolygon) and len(geom.geoms) == 1:
-        return geom.geoms[0]
-    return geom
-
-
 def buffer_plot_geom(geom, buffer_distance=100):
-    if isinstance(geom, Polygon):
-        return geom.buffer(buffer_distance)
-    elif isinstance(geom, MultiPolygon):
+    if isinstance(geom, MultiPolygon):
         buffered = [g.buffer(buffer_distance) for g in geom.geoms]
-        return unary_union(buffered)
+        return MultiPolygon(buffered)
     else:
-        raise TypeError(f"Unsupported geometry type: {type(geom)}")
+        return geom.buffer(buffer_distance)
 
 
 def get_mission_geom(gdf: gpd.GeoDataFrame, mission_id: int):
+    # Get the row corresponding to the mission ID
     row = gdf[gdf["mission_id"] == f"{mission_id:06d}"]
     if row.empty:
         raise ValueError(f"No geometry found for mission_id={mission_id}")
-    return unwrap_if_single_multipolygon(row.geometry.values[0])
+    
+    geom = row.geometry.values[0]
+    # Most geometry values are a single Polygon wrapped as MultiPolygon
+    if isinstance(geom, MultiPolygon) and len(geom.geoms) == 1:
+        return geom.geoms[0]
+    return geom
 
 
 def get_plot_geom(gdf: gpd.GeoDataFrame, plot_id):
@@ -69,32 +63,33 @@ def create_hardlinks_for_images(filtered_gdf, dest_folder, raw_images_root=Path(
             except FileExistsError:
                 pass  # already linked, ignore
         else:
-            print(f"Warning: Image not found: {src}")
+            print(f"Image not found: {src}")
 
-def process_mission(mission_id, role, parent_folder, combined_intersection):
-    mission_str = pad_id(mission_id)
-    subfolder = parent_folder / role
+def process_mission(mission_id, mission_type, parent_folder, combined_intersection):
+    mission_str = f"{mission_id:06d}"
+    subfolder = parent_folder / mission_type
     subfolder.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Download image metadata using rclone
+    # Download image metadata using rclone
     download_image_metadata(mission_str, subfolder)
     meta_path = subfolder / f"{mission_str}_image-metadata.gpkg"
 
-    # Step 2: Load metadata and filter
-    gdf = gpd.read_file(meta_path)
-    original_crs = gdf.crs
-    gdf = gdf.to_crs(32610)
-    filtered = gdf[gdf.geometry.within(combined_intersection)]
+    # Load metadata and filter to retain only images within the intersection
+    image_metadata = gpd.read_file(meta_path)
+    original_crs = image_metadata.crs
+    image_metadata = image_metadata.to_crs(32610)
+    filtered = image_metadata[image_metadata.geometry.within(combined_intersection)]
     filtered = filtered.to_crs(original_crs)
 
-    # Step 3: Save filtered metadata and create hardlinks
+    # Save filtered metadata and create hardlinks
     filtered.to_file(meta_path, driver="GPKG")
-    print(f"{role.capitalize()}: saved {len(filtered)} filtered points")
+    print(f"{mission_type}: saved {len(filtered)} filtered points")
     create_hardlinks_for_images(filtered, subfolder)
 
 
 def main():
     df = pd.read_csv(MATCH_CSV)
+    # Project to meters-based CRS
     mission_meta = gpd.read_file(MISSION_META_GPKG).to_crs(32610)
     plots_gdf = gpd.read_file(GROUND_PLOT_GPKG).to_crs(32610)
 
@@ -102,17 +97,20 @@ def main():
         plot_id = row["plot_id"]
         hn_id = int(row["mission_id_hn"])
         lo_id = int(row["mission_id_lo"])
-        hn_str, lo_str = pad_id(hn_id), pad_id(lo_id)
 
-        parent_folder = Path(OUTPUT_ROOT) / f"{plot_id:04d}_{hn_str}_{lo_str}"
+        # Create parent folder as plotID_nadirmissionID_obliquemissionID
+        parent_folder = Path(OUTPUT_ROOT) / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
         parent_folder.mkdir(parents=True, exist_ok=True)
 
+        # Get drone mission geometry polygons
         hn_geom = get_mission_geom(mission_meta, hn_id)
         lo_geom = get_mission_geom(mission_meta, lo_id)
 
+        # Get ground reference plot geometry and buffer it by 100m
         raw_plot_geom = get_plot_geom(plots_gdf, plot_id)
         buffered_plot = buffer_plot_geom(raw_plot_geom, buffer_distance=100)
 
+        # Get the intersection of the buffered plot with both mission geometries
         combined_intersection = buffered_plot.intersection(hn_geom).intersection(lo_geom)
 
         process_mission(hn_id, "nadir", parent_folder, combined_intersection)
