@@ -120,14 +120,16 @@ def main():
         buffered_plot = buffer_plot_geom(raw_plot_geom, buffer_distance=100)
 
         # Get the intersection of the buffered plot with both mission geometries
-        combined_intersection = buffered_plot.intersection(hn_geom).intersection(
-            lo_geom
+        # Buffering by 0 to fix invalid geometries, if any
+        combined_intersection = (buffered_plot.buffer(0)).intersection(hn_geom.buffer(0)).intersection(
+            lo_geom.buffer(0)
         )
 
         process_mission(hn_id, "nadir", parent_folder, combined_intersection)
         process_mission(lo_id, "oblique", parent_folder, combined_intersection)
 
         print(f"Completed processing for plot_id: {plot_id}")
+
 
 
 if __name__ == "__main__":
