@@ -18,3 +18,8 @@ The goal of photogrammetry is to reconstruct the 3D geometry of the scene from i
 - `1_compute_CHM.py`:
 - `2_tree_detection.py`:
 - `3_match_field_drone.py`:
+
+Install [spatial-utils](https://github.com/open-forest-observatory/spatial-utils)
+```
+conda install scikit-learn
+```
