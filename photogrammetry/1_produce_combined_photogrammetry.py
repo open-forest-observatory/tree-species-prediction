@@ -60,15 +60,21 @@ def produce_combined_config(imagery_folder: Path):
     make_derived_yaml(METASHAPE_CONFIG, output_path=output_config_file, override_options=override_dict)
 
 def make_photogrammetry_run_scripts(n_chunks=4):
+    # List all configs
     derived_configs = list(DERIVED_METASHAPE_CONFIGS_FOLDER.glob("*yml"))
+    # The path to the metashape runner script
     metashape_script_path = str(Path(AUTOMATE_METASHAPE_PATH, "python", "metashape_workflow.py"))
+    # Create a string that contains the python run command
     run_strings = [" ".join([METASHAPE_PYTHON_PATH, metashape_script_path, "--config_file", str(derived_config)]) + "\n" for derived_config in derived_configs]
 
+    # Determine how many files to run per machine
     n_files_per_chunk = int(ceil(len(run_strings) / n_chunks))
 
+    # Write out one file per chunk
     for i in range(n_chunks):
-        output_file = Path(DERIVED_METASHAPE_CONFIGS_FOLDER, f"run_script_{i:02}.sh")
-        with open(output_file, "w") as output_file_h:
+        # Create the named output file
+        with open(Path(DERIVED_METASHAPE_CONFIGS_FOLDER, f"run_script_{i:02}.sh"), "w") as output_file_h:
+            # Get the corresponding lines and write them out
             chunk_run_strings = run_strings[i * n_files_per_chunk: (i+1) * n_files_per_chunk]
             output_file_h.writelines(chunk_run_strings)
 
@@ -79,4 +85,5 @@ if __name__ == "__main__":
     for imagery_set in imagery_sets:
         produce_combined_config(imagery_set)
 
+    # Create scripts that can be run on multiple machines to sequentially run projects
     make_photogrammetry_run_scripts()
