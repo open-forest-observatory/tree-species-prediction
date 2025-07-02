@@ -86,7 +86,7 @@ def process_mission(mission_id, mission_type, parent_folder, combined_intersecti
     original_crs = image_metadata.crs
     image_metadata = image_metadata.to_crs(32610)
     filtered = image_metadata[image_metadata.geometry.within(combined_intersection)]
-    filtered = filtered.to_crs(original_crs)
+    filtered.to_crs(original_crs, inplace=True)
 
     # Save filtered metadata and create hardlinks
     filtered.to_file(meta_path, driver="GPKG")
@@ -95,12 +95,12 @@ def process_mission(mission_id, mission_type, parent_folder, combined_intersecti
 
 
 def main():
-    df = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
+    plot_mission_matches = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
     # Project to meters-based CRS
     mission_meta = gpd.read_file(DRONE_MISSIONS_WITH_ALT_FILE).to_crs(32610)
     plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE).to_crs(32610)
 
-    for _, row in tqdm(df.iterrows(), total=len(df)):
+    for _, row in tqdm(plot_mission_matches.iterrows(), total=len(plot_mission_matches)):
         plot_id = row["plot_id"]
         hn_id = int(row["mission_id_hn"])
         lo_id = int(row["mission_id_lo"])
