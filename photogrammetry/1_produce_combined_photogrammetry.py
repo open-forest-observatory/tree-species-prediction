@@ -9,27 +9,29 @@ from constants import (
     PHOTOGRAMMETRY_FOLDER,
 )
 
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import METASHAPE_CONFIG,DERIVED_METASHAPE_CONFIGS_FOLDER, RAW_IMAGE_SETS_FOLDER
+
 # TODO consider other ways to find this location
 sys.path.append(str(Path(AUTOMATE_METASHAPE_PATH, "python")))
-from metashape_workflow_functions import MetashapeWorkflow
-
-# The path to the config file that has the default processing parameters
-DEFAULT_METASHAPE_CONFIG = Path(AUTOMATE_METASHAPE_PATH, "config", "config-base.yml")
+from metashape_workflow_functions import make_derived_yaml
 
 
-def produce_combined(nadir_dataset_id, oblique_dataset_id):
+def produce_combined_config(imagery_folder: Path):
+    # Extract the last part of the path, which is the "<plot_id>_<nadir_id>_<oblique_id>" string
+    run_name = imagery_folder.name
     # Find the path to the imagery datasets.
-    # TODO, could be updated to download data from JS2 Object store
-    nadir_dataset_path = Path(IMAGERY_DATASETS_FOLDER, nadir_dataset_id)
-    oblique_dataset_path = Path(IMAGERY_DATASETS_FOLDER, oblique_dataset_id)
+    nadir_dataset_path = Path(imagery_folder, "nadir")
+    oblique_dataset_path = Path(imagery_folder, "oblique")
     # Find the sub-folders, corresponding to sub-missions of this dataset
     nadir_sub_missions = [str(f) for f in nadir_dataset_path.glob("*") if f.is_dir()]
     oblique_sub_missions = [
         str(f) for f in oblique_dataset_path.glob("*") if f.is_dir()
     ]
-    paired_id = f"{nadir_dataset_id}_{oblique_dataset_id}"
 
-    project_folder = Path(PHOTOGRAMMETRY_FOLDER, paired_id)
+    # Create the output folders for photogrammetry outputs
+    project_folder = Path(PHOTOGRAMMETRY_FOLDER, run_name)
     output_folder = Path(project_folder, "outputs")
 
     # Build and override dict that will update the base config with run-specific information
@@ -38,15 +40,17 @@ def produce_combined(nadir_dataset_id, oblique_dataset_id):
         "photo_path_secondary": oblique_sub_missions,
         "output_path": str(output_folder),
         "project_path": str(project_folder),
-        "run_name": f"{nadir_dataset_id}_{oblique_dataset_id}",
+        "run_name": run_name,
     }
 
-    # Construct the workflow
-    workflow = MetashapeWorkflow(DEFAULT_METASHAPE_CONFIG, override_dict=override_dict)
-    # Run the workflow
-    workflow.run()
+    output_config_file = Path(DERIVED_METASHAPE_CONFIGS_FOLDER, run_name + ".yml")
+    # Save the derived config
+    make_derived_yaml(METASHAPE_CONFIG, output_path=output_config_file, override_options=override_dict)
 
 
 if __name__ == "__main__":
-    # Test with the two valley missions
-    produce_combined("000167", "000168")
+    # List all the imagery folders
+    imagery_sets =RAW_IMAGE_SETS_FOLDER.glob("*")
+    # For each folder, produce the corresponding config
+    for imagery_set in imagery_sets:
+        produce_combined_config(imagery_set)
