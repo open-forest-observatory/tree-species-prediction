@@ -12,12 +12,13 @@ from constants import (
 
 # Add folder where constants.py is to system search path
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import METASHAPE_CONFIG,DERIVED_METASHAPE_CONFIGS_FOLDER, RAW_IMAGE_SETS_FOLDER
+from constants import DERIVED_METASHAPE_CONFIGS_FOLDER, RAW_IMAGE_SETS_FOLDER
 
 # TODO consider other ways to find this location
 sys.path.append(str(Path(AUTOMATE_METASHAPE_PATH, "python")))
 from metashape_workflow_functions import make_derived_yaml
 
+METASHAPE_CONFIG = Path(AUTOMATE_METASHAPE_PATH, "config", "config-base.yml")
 
 def produce_combined_config(imagery_folder: Path):
     # Extract the last part of the path, which is the "<plot_id>_<nadir_id>_<oblique_id>" string
@@ -38,12 +39,20 @@ def produce_combined_config(imagery_folder: Path):
     output_folder = Path(project_folder, "outputs")
 
     # Build and override dict that will update the base config with run-specific information
+    # Also, the base config produces 3 Dem options and 4 orthomosaics. We select only the ones we
+    # need for this application.
     override_dict = {
         "photo_path": nadir_sub_missions,
         "photo_path_secondary": oblique_sub_missions,
         "output_path": str(output_folder),
         "project_path": str(project_folder),
         "run_name": run_name,
+        "buildDem":{
+            "surface": ["DTM-ptcloud", "DSM-mesh"]
+        },
+        "buildOrthomosaic":{
+            "surface": ["DSM-ptcloud"]
+        },
     }
 
     output_config_file = Path(DERIVED_METASHAPE_CONFIGS_FOLDER, run_name + ".yml")
