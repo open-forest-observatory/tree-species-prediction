@@ -16,14 +16,6 @@ from constants import (ALL_MISSIONS_REMOTE_FOLDER, DRONE_IMAGES_ROOT,
                        GROUND_REFERENCE_PLOTS_FILE, RAW_IMAGE_SETS_FOLDER)
 
 
-def buffer_plot_geom(geom, buffer_distance=100):
-    if isinstance(geom, MultiPolygon):
-        buffered = [g.buffer(buffer_distance) for g in geom.geoms]
-        return MultiPolygon(buffered)
-    else:
-        return geom.buffer(buffer_distance)
-
-
 def get_mission_geom(gdf: gpd.GeoDataFrame, mission_id: int):
     # Get the row corresponding to the mission ID
     row = gdf[gdf["mission_id"] == f"{mission_id:06d}"]
@@ -35,13 +27,6 @@ def get_mission_geom(gdf: gpd.GeoDataFrame, mission_id: int):
     if isinstance(geom, MultiPolygon) and len(geom.geoms) == 1:
         return geom.geoms[0]
     return geom
-
-
-def get_plot_geom(gdf: gpd.GeoDataFrame, plot_id):
-    row = gdf[gdf["plot_id"] == f"{plot_id:04d}"]
-    if row.empty:
-        raise ValueError(f"No plot found with ID={plot_id}")
-    return row.iloc[0].geometry
 
 
 def download_image_metadata(mission_id: str, dest_folder: Path):
@@ -100,6 +85,9 @@ def main():
     mission_meta = gpd.read_file(DRONE_MISSIONS_WITH_ALT_FILE).to_crs(32610)
     plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE).to_crs(32610)
 
+    # Buffer the plots by 100m
+    plots_gdf['geometry'] = plots_gdf.geometry.buffer(100)
+
     for _, row in tqdm(plot_mission_matches.iterrows(), total=len(plot_mission_matches)):
         plot_id = row["plot_id"]
         hn_id = int(row["mission_id_hn"])
@@ -115,9 +103,11 @@ def main():
         hn_geom = get_mission_geom(mission_meta, hn_id)
         lo_geom = get_mission_geom(mission_meta, lo_id)
 
-        # Get ground reference plot geometry and buffer it by 100m
-        raw_plot_geom = get_plot_geom(plots_gdf, plot_id)
-        buffered_plot = buffer_plot_geom(raw_plot_geom, buffer_distance=100)
+        # Get the corresponding buffered ground plot geometry
+        row = plots_gdf[plots_gdf["plot_id"] == f"{plot_id:04d}"]
+        if row.empty:
+            raise ValueError(f"No plot found with ID={plot_id}")
+        buffered_plot = row.geometry.values[0]
 
         # Get the intersection of the buffered plot with both mission geometries
         # Buffering by 0 to fix invalid geometries, if any
