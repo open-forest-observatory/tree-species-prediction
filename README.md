@@ -15,7 +15,7 @@ The goal of photogrammetry is to reconstruct the 3D geometry of the scene from i
 - `1_produce_combined_photogrammetry.py`: Runs photogrammetry on a pair of missions, one nadir and the other oblique.
 
 ## Ground reference data prep
-- `1_compute_CHM.py`:
+- `1_compute_CHM.py`: This computes a canopy height model from the digital terrain model (DTM) and digital surface model (DSM) produced by photogrammetry. It requires that [rioxarray](https://corteva.github.io/rioxarray/stable/installation.html) be installed.
 - `2_tree_detection.py`:
 - `3_match_field_drone.py`:
 
