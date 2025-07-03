@@ -17,7 +17,7 @@ from tree_detection_framework.postprocessing.postprocessing import (
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
 from constants import CHM_FOLDER, TREE_DETECTIONS_FOLDER
 
-CHIP_SIZE = 512
+CHIP_SIZE = 750
 CHIP_STRIDE = 400
 RESOLUTION = 0.2
 

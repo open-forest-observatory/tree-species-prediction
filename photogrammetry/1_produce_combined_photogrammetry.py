@@ -1,4 +1,3 @@
-import csv
 import sys
 from pathlib import Path
 
@@ -8,7 +7,6 @@ from constants import (
     AUTOMATE_METASHAPE_PATH,
     DERIVED_METASHAPE_CONFIGS_FOLDER,
     METASHAPE_PYTHON_PATH,
-    OVERLAPPING_PLOTS_FILE,
     PHOTOGRAMMETRY_FOLDER,
     RAW_IMAGE_SETS_FOLDER,
 )
