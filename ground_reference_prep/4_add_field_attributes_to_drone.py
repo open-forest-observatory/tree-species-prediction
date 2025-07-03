@@ -5,7 +5,15 @@ from pathlib import Path
 from spatial_utils.geospatial import ensure_projected_CRS
 import matplotlib.pyplot as plt
 import pandas as pd
+import sys
 
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import (
+    GROUND_REFERENCE_TREES_FILE,
+    SHIFTED_FIELD_TREES_FOLDER,
+    TREE_DETECTIONS_FOLDER,
+)
 
 # Taken from here:
 # https://stackoverflow.com/questions/6430091/efficient-distance-calculation-between-n-points-and-a-reference-in-numpy-scipy
