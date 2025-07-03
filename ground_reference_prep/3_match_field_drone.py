@@ -11,14 +11,14 @@ import shapely
 from scipy.spatial import KDTree
 from shapely.affinity import translate
 from tqdm import tqdm
-#from spatial_utils import
+from spatial_utils.geospatial import ensure_projected_CRS
 
 # Add folder where constants.py is to system search path
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
 from constants import (
     GROUND_REFERENCE_TREES_FILE,
     OVERLAPPING_PLOTS_FILE,
-    SHIFTED_DRONE_TREES_FOLDER,
+    SHIFTED_FIELD_TREES_FOLDER,
     TREE_DETECTIONS_FOLDER,
 )
 
@@ -110,12 +110,13 @@ def find_best_shift(
     return best_shift
 
 
-def align_plot(field_trees, drone_trees, height_column="height"):
-    original_drone_CRS = drone_trees.crs
-    # TODO transform the drone trees to a cartesian CRS if not already
+def align_plot(field_trees, drone_trees, height_column="height", vis=False):
+    original_field_CRS = field_trees.crs
+    # Transform the drone trees to a cartesian CRS if not already
+    field_trees = ensure_projected_CRS(field_trees)
 
-    # Ensure that field trees are in the same CRS
-    field_trees.to_crs(drone_trees.crs, inplace=True)
+    # Ensure that drone trees are in the same CRS
+    drone_trees.to_crs(field_trees.crs, inplace=True)
 
 
     if not field_trees[height_column].isna().all():
@@ -144,51 +145,59 @@ def align_plot(field_trees, drone_trees, height_column="height"):
 
     print(f"Rough shift: {coarse_shift}, fine shift: {fine_shift}")
 
-    shifted_drone_trees = drone_trees.copy()
-    # Apply the negative of the best shift, since that is defined as the shift that would be applied
-    # to the field trees but we're instead applying it to the drone trees
-    shifted_drone_trees.geometry = drone_trees.geometry.apply(
-        lambda x: translate(x, xoff=-fine_shift[0], yoff=-fine_shift[1])
+    shifted_field_trees = field_trees.copy()
+    # Apply the computed shift to the geometry of all field trees
+    shifted_field_trees.geometry = shifted_field_trees.geometry.apply(
+        lambda x: translate(x, xoff=fine_shift[0], yoff=fine_shift[1])
     )
 
     # Convert back to the original CRS
-    shifted_drone_trees.to_crs(original_drone_CRS, inplace=True)
+    shifted_field_trees.to_crs(original_field_CRS, inplace=True)
 
-    # Plot the aligned data
-    f, ax = plt.subplots()
-    shifted_drone_trees.plot(ax=ax)
-    field_trees.plot(ax=ax)
-    plt.show()
+    if vis:
+        # Plot the aligned data
+        f, ax = plt.subplots()
+        shifted_field_trees.plot(ax=ax)
+        field_trees.plot(ax=ax)
+        plt.show()
 
-    return shifted_drone_trees
+    return shifted_field_trees
 
 
 if __name__ == "__main__":
-    # Read the pairings between
+    # Read the pairings between drone and field plots
     plot_pairings = pd.read_csv(OVERLAPPING_PLOTS_FILE)
+    # List all the detected trees
     detected_tree_folders = sorted(TREE_DETECTIONS_FOLDER.glob("*"))
+    # Read the ground reference trees
     ground_reference_trees = gpd.read_file(GROUND_REFERENCE_TREES_FILE)
 
-    # First replace any height values with allometric
+    # First replace any missing height values with pre-computed allometric values
     nan_height = ground_reference_trees.height.isna()
     ground_reference_trees[nan_height].height = ground_reference_trees[
         nan_height
     ].height_allometric
 
+    # For any remaining missing height values that have DBH, use an allometric equation to compute
+    # the height
     nan_height = ground_reference_trees.height.isna()
+    # These parameters were fit on paired height, DBH data from this dataset.
     allometric_height_func = lambda x: 1.3 + np.exp(
         -0.3136489123372108 + 0.84623571 * np.log(x)
     )
+    # Compute the allometric height and assign it
     allometric_height = allometric_height_func(
         ground_reference_trees[nan_height].dbh.to_numpy()
     )
     ground_reference_trees.loc[nan_height, "height"] = allometric_height
 
+    # Iterate over detected trees
     for detected_tree_folder in detected_tree_folders:
         drone_trees = gpd.read_file(Path(detected_tree_folder, "tree_tops.gpkg"))
 
+        # Parse the mission names
         ID = detected_tree_folder.stem
-        high_nadir_ID, low_oblique_ID = ID.split("_")
+        _, high_nadir_ID, low_oblique_ID = ID.split("_")
 
         high_nadir_ID = int(high_nadir_ID.lstrip("0"))
         low_oblique_ID = int(low_oblique_ID.lstrip("0"))
@@ -207,20 +216,12 @@ if __name__ == "__main__":
 
         field_trees = ground_reference_trees.query("@plot_ID == plot_id")
 
-        field_trees.to_crs(drone_trees.crs, inplace=True)
-
-        # If the height is entirely absent, replace it with the allometric height.
-        # TODO, consider whether this should be done on a per-tree basis instead
-        if field_trees["height"].isna().all():
-            field_trees["height"] = field_trees["height_allometric"]
-
-        shifted_drone_trees = align_plot(
+        # Compute the shift between the field and drone trees
+        shifted_field_trees = align_plot(
             field_trees=field_trees, drone_trees=drone_trees
         )
 
-        output_file = Path(SHIFTED_DRONE_TREES_FOLDER, ID + ".gpkg")
+        # Write out the shifted field trees
+        output_file = Path(SHIFTED_FIELD_TREES_FOLDER, ID + ".gpkg")
         output_file.parent.mkdir(exist_ok=True, parents=True)
-
-        # TODO remove this once we're done with testing
-        shifted_drone_trees.to_file(output_file)
-        field_trees.to_file(Path(SHIFTED_DRONE_TREES_FOLDER, f"{ID}_field_trees.gpkg"))
+        shifted_field_trees.to_file(output_file)
