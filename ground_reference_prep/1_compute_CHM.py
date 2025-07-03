@@ -93,14 +93,12 @@ if __name__ == "__main__":
         photogrammetry_products_folder = Path(photogrammetry_run_folder, "outputs")
         # There should be only one file with the corresponding ending, but the first part is a
         # timestamp that is unknown
-        dsm_files = list(photogrammetry_products_folder.glob("*_dsm-mesh.tif"))
-        dtm_files = list(photogrammetry_products_folder.glob("*_dtm-ptcloud.tif"))
+        dsm_file = Path(photogrammetry_run_folder, "outputs", f"{run_ID}_dsm-mesh.tif")
+        dtm_file = Path(photogrammetry_run_folder, "outputs", f"{run_ID}_dtm-ptcloud.tif")
 
-        if len(dsm_files) != 1 or len(dtm_files) != 1:
+        if not dsm_file.is_file() or not dtm_file.is_file():
+            print(f"Skipping run {run_ID} because of missing data")
             continue
-
-        dsm_file = dsm_files[0]
-        dtm_file = dtm_files[0]
 
         # All the outputs will be saved to one folder
         output_chm_path = Path(CHM_FOLDER, f"{run_ID}.tif")

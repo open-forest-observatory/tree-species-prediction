@@ -172,6 +172,11 @@ if __name__ == "__main__":
     # Read the ground reference trees
     ground_reference_trees = gpd.read_file(GROUND_REFERENCE_TREES_FILE)
 
+    # Filter out any dead trees
+    # TODO consider only keeping "L" ones rather than discarding "D", since there are over 1000 rows
+    # with None values
+    ground_reference_trees = ground_reference_trees[ground_reference_trees.live_dead != "D"]
+
     # First replace any missing height values with pre-computed allometric values
     nan_height = ground_reference_trees.height.isna()
     ground_reference_trees[nan_height].height = ground_reference_trees[
@@ -206,9 +211,9 @@ if __name__ == "__main__":
         matching_row = plot_pairings.query(
             "@low_oblique_ID == mission_id_lo and @high_nadir_ID == mission_id_hn"
         )
-        # This should only be for debugging since
+
         if len(matching_row) == 0:
-            continue
+            raise ValueError("Multiple or now matching rows")
 
         # use the `plot_id` field to determine the corresponding plot ID
         # Then point to that file and run this pipeline
