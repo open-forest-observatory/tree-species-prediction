@@ -17,15 +17,22 @@ IMAGERY_DATASETS_FOLDER = Path(
 RAW_FOLDER = Path(DATA_ROOT_FOLDER, "raw")
 GROUND_REFERENCE_FOLDER = Path(RAW_FOLDER, "ground-reference")
 
+GROUND_REFERENCE_PLOTS_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-reference_plots.gpkg")
+GROUND_REFERENCE_TREES_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-reference_trees.gpkg")
+
 # Path to parent remote folder with all missions
 ALL_MISSIONS_REMOTE_FOLDER = "js2s3:ofo-public/drone/missions_01"
 
 # Intermediate
-PHOTOGRAMMETRY_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "photogrammetry")
-PREPROCESSING_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "preprocessing")
-RAW_IMAGE_SETS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "raw_image_sets")
+INTERMEDIATE_DATA_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate",)
+OVERLAPPING_PLOTS_FILE = Path(
+    INTERMEDIATE_DATA_FOLDER, "ground_plot_drone_mission_matches.csv"
+)
+PHOTOGRAMMETRY_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "photogrammetry")
+PREPROCESSING_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "preprocessing")
+RAW_IMAGE_SETS_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "raw_image_sets")
 
-DERIVED_METASHAPE_CONFIGS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "metashape_configs")
+DERIVED_METASHAPE_CONFIGS_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "metashape_configs")
 
 # Inputs for first preprocessing step 1_get_mission_altitude.py
 MISSION_ALTITUDES_FOLDER = Path(PREPROCESSING_FOLDER, "mission_altitudes")
@@ -36,9 +43,9 @@ MISSIONS_OUTSIDE_DTM_LIST = Path(
 GROUND_REFERENCE_PLOTS_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-reference_plots.gpkg")
 DRONE_MISSIONS_WITH_ALT_FILE = Path(PREPROCESSING_FOLDER, "ofo-all-missions-metadata-with-altitude.gpkg")
 
-GROUND_PLOT_DRONE_MISSION_MATCHES_FILE = Path(DATA_ROOT_FOLDER, "intermediate", "ground_plot_drone_mission_matches.csv")
-
-CHM_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "CHMs")
-TREE_DETECTIONS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "detected_trees")
+GROUND_PLOT_DRONE_MISSION_MATCHES_FILE = Path(INTERMEDIATE_DATA_FOLDER , "ground_plot_drone_mission_matches.csv")
 
 DRONE_IMAGES_ROOT = Path("/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted")
+CHM_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "CHMs")
+TREE_DETECTIONS_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "detected_trees")
+SHIFTED_FIELD_TREES_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "shifted_field_trees")
