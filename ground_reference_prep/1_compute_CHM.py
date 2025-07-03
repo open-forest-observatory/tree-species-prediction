@@ -1,9 +1,14 @@
 from pathlib import Path
 from typing import Optional, Union
+import sys
 
 import numpy as np
 import rioxarray
 from rasterio.enums import Resampling
+
+# Add folder where constants.py is to system search path
+sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
+from constants import PHOTOGRAMMETRY_FOLDER, CHM_FOLDER
 
 
 def compute_CHM(
@@ -74,3 +79,30 @@ def compute_CHM(
     # Save to disk
     Path(output_chm_path).parent.mkdir(parents=True, exist_ok=True)
     chm.rio.to_raster(output_chm_path)
+
+
+if __name__ == "__main__":
+    # List all the folders, corresponding to photogrammetry for a nadir-oblique pair
+    photogrammetry_run_folders = PHOTOGRAMMETRY_FOLDER.glob("*_*")
+    # Iterate over the folders
+    for photogrammetry_run_folder in photogrammetry_run_folders:
+        # The last part of the path is the <nadir id>_<oblique id> pair
+        run_ID = photogrammetry_run_folder.parts[-1]
+
+        # This is where all the data products are saved to
+        photogrammetry_products_folder = Path(photogrammetry_run_folder, "outputs")
+        # There should be only one file with the corresponding ending, but the first part is a
+        # timestamp that is unknown
+        dsm_file = Path(photogrammetry_run_folder, "outputs", f"{run_ID}_dsm-mesh.tif")
+        dtm_file = Path(photogrammetry_run_folder, "outputs", f"{run_ID}_dtm-ptcloud.tif")
+
+        if not dsm_file.is_file() or not dtm_file.is_file():
+            print(f"Skipping run {run_ID} because of missing data")
+            continue
+
+        # All the outputs will be saved to one folder
+        output_chm_path = Path(CHM_FOLDER, f"{run_ID}.tif")
+        # Run the computation
+        compute_CHM(
+            dsm_path=dsm_file, dtm_path=dtm_file, output_chm_path=output_chm_path
+        )
