@@ -2,6 +2,7 @@ from pathlib import Path
 
 # Locations of installed dependencies
 AUTOMATE_METASHAPE_PATH = "/ofo-share/repos-david/automate-metashape"
+METASHAPE_PYTHON_PATH = "/home/exouser/miniconda3/envs/meta/bin/python"
 
 # This path can edited if working with a copy of the data
 DATA_ROOT_FOLDER = Path("/ofo-share/species-prediction-project/")
@@ -23,6 +24,8 @@ ALL_MISSIONS_REMOTE_FOLDER = "js2s3:ofo-public/drone/missions_01"
 PHOTOGRAMMETRY_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "photogrammetry")
 PREPROCESSING_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "preprocessing")
 RAW_IMAGE_SETS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "raw_image_sets")
+
+DERIVED_METASHAPE_CONFIGS_FOLDER = Path(DATA_ROOT_FOLDER, "intermediate", "metashape_configs")
 
 # Inputs for first preprocessing step 1_get_mission_altitude.py
 MISSION_ALTITUDES_FOLDER = Path(PREPROCESSING_FOLDER, "mission_altitudes")
