@@ -47,6 +47,7 @@ def produce_combined_config(imagery_folder: Path):
         "project_path": str(project_folder),
         "run_name": run_name,
         "buildOrthomosaic": {"surface": ["DSM-ptcloud"]},
+        "buildPointCloud": {"remove_after_export": True},
     }
 
     output_config_file = Path(DERIVED_METASHAPE_CONFIGS_FOLDER, run_name + ".yml")
