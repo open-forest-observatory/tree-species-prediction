@@ -128,18 +128,21 @@ def match_field_and_drone_trees(
     drone_trees_path: Path,
     drone_crowns_path: Path,
     field_perim: gpd.GeoDataFrame,
+    field_buffer_dist : float = 10.0,
 ):
+    # Load all the data
     field_trees = gpd.read_file(field_trees_path)
     drone_trees = gpd.read_file(drone_trees_path)
     drone_crown = gpd.read_file(drone_crowns_path)
 
+    # Ensure it's all in the same projected CRS
     field_trees = ensure_projected_CRS(field_trees)
     drone_trees = drone_trees.to_crs(field_trees.crs)
     drone_crown = drone_crown.to_crs(field_trees.crs)
     field_perim = field_perim.to_crs(field_trees.crs)
 
     # Get the buffered perimiter
-    perim_buff = field_perim.buffer(10).geometry.values[0]
+    perim_buff = field_perim.buffer(field_buffer_dist).geometry.values[0]
 
     # Consider within vs intersects or other options
     drone_trees = drone_trees[drone_trees.within(perim_buff)]
@@ -155,18 +158,22 @@ def match_field_and_drone_trees(
     matched_field_trees = field_trees.iloc[matched_field_tree_inds]
     # Drop the geometry from the field trees since we don't want to keep it
     matched_field_trees.drop("geometry", axis=1, inplace=True)
-    # Compute the "unique_ID" for matched drone trees
+    # Compute the "unique_ID" for matched drone trees. This is a crosswalk with the
+    # "treetop_unique_ID" field in the crown polygons
     drone_tree_unique_IDs = drone_trees.iloc[matched_drone_tree_inds].unique_ID.to_numpy()
-    # These two variables are now ordered in the same way
+    # These two variables, matched_field_trees and drone_tree_unique_IDs, are now ordered in the same way
+    # This means corresponding rows should be paired. Effectively, we could add the
+    # drone_tree_unique_ID as a column of the field trees and then merge based on that. But we don't
+    # want to modify the dataframe, so it's just provided for the `merge` step.
 
-    # Transfer the attributes to the drone trees
+    # Transfer the attributes to the drone trees.
     drone_crowns_with_additional_attributes = pd.merge(
         left=drone_crown,
         right=matched_field_trees,
         left_on="treetop_unique_ID",
         right_on=drone_tree_unique_IDs,
         how="left",
-        suffixes=("_drone", "_field")
+        suffixes=("_drone", "_field") # Append these suffixes in cases of name collisions
     )
 
     return drone_crowns_with_additional_attributes
@@ -174,14 +181,18 @@ def match_field_and_drone_trees(
 
 
 if __name__ == "__main__":
+    # List files
     shifted_field_trees = list(SHIFTED_FIELD_TREES_FOLDER.glob("*"))
     detected_trees = list(TREE_DETECTIONS_FOLDER.glob("*"))
 
+    # Compute the dataset ID without the extension
     field_datasets = set([f.stem for f in shifted_field_trees])
     detected_tree_datasets = set([f.name for f in detected_trees])
 
+    # Find which datasets are present in both sets
     overlapping_datasets = field_datasets.intersection(detected_tree_datasets)
 
+    # Print how many unpaired datasets there are
     field_missing_pairs = len(field_datasets) - len(overlapping_datasets)
     detected_missing_pairs = len(detected_tree_datasets) - len(overlapping_datasets)
 
@@ -195,14 +206,18 @@ if __name__ == "__main__":
             f"Warning: {detected_missing_pairs} detected datasets do not have corresponding field trees"
         )
 
+    # Load the spatial bounds of the field survey, for all plots
     field_reference_plot_bounds = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)
 
+    # Create the output directory
     DRONE_CROWNS_WITH_FIELD_ATTRIBUTES.mkdir(exist_ok=True, parents=True)
-
     for dataset in overlapping_datasets:
+        # Extract which field plot this dataset corresponds to
         plot_id = dataset.split("_")[0]
+        # Identify the perimiter as a single row from the dataframe
         field_perim = field_reference_plot_bounds.query("plot_id == @plot_id")
 
+        # Create the crowns with additional attributes from the field surveyed trees
         updated_drone_crowns = match_field_and_drone_trees(
             field_trees_path=Path(SHIFTED_FIELD_TREES_FOLDER, dataset + ".gpkg"),
             drone_trees_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_tops.gpkg"),
@@ -210,38 +225,5 @@ if __name__ == "__main__":
             field_perim=field_perim,
         )
 
+        # Save the updated crowns, knowing the output directory has already been created
         updated_drone_crowns.to_file(Path(DRONE_CROWNS_WITH_FIELD_ATTRIBUTES, dataset + ".gpkg"))
-
-#
-#  # Run matching and filter to only matched trees
-#  matches = match_trees_singlestratum(trees_field_foc,
-#                                      trees_drone_foc,
-#                                      search_height_proportion = 0.5,
-#                                      search_distance_fun_slope = 0.1,
-#                                      search_distance_fun_intercept = 1)
-#
-#  matches = matches |>
-#    filter(!is.na(final_predicted_tree_match_id))
-#
-#  ## Take the crown polygons and look up the species of the matched field tree
-#  # First get only the columns we need from the field tree data
-#  trees_field_foc_simp = matches |>
-#    st_drop_geometry() |>
-#    select(observed_tree_id,
-#           species_observed = species,
-#           height_observed = ht_top,
-#           percent_green_observed = pct_current_green,
-#           stem_map_name,
-#           predicted_tree_id = final_predicted_tree_match_id) |>
-#    mutate(live_observed = as.numeric(percent_green_observed) > 0,
-#           percent_green_observed = as.numeric(percent_green_observed),
-#           fire = fire_name_foc)
-#
-#  #  Join the field tree data to the drone crown polygons, also pull in the photogrammetry tree height (from the treetop points)
-#  crowns_drone_foc_w_field_data = crowns_drone_foc |>
-#    inner_join(trees_field_foc_simp, by = "predicted_tree_id") |>
-#    left_join(trees_drone_foc |> st_drop_geometry(), by = join_by(predicted_tree_id, stem_map_name)) |>
-#    rename(height_chm = height)
-#
-#  # Bind onto running data frame
-#  crowns_drone_w_field_data = rbind(crowns_drone_w_field_data, crowns_drone_foc_w_field_data)
