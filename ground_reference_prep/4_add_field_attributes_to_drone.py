@@ -14,6 +14,7 @@ from constants import (
     GROUND_REFERENCE_PLOTS_FILE,
     SHIFTED_FIELD_TREES_FOLDER,
     TREE_DETECTIONS_FOLDER,
+    DRONE_CROWNS_WITH_FIELD_ATTRIBUTES,
 )
 
 
@@ -123,10 +124,10 @@ def match_trees_singlestratum(
 
 
 def match_field_and_drone_trees(
-    field_trees_path,
-    drone_trees_path,
-    drone_crowns_path,
-    field_perim,
+    field_trees_path: Path,
+    drone_trees_path: Path,
+    drone_crowns_path: Path,
+    field_perim: gpd.GeoDataFrame,
 ):
     field_trees = gpd.read_file(field_trees_path)
     drone_trees = gpd.read_file(drone_trees_path)
@@ -150,23 +151,25 @@ def match_field_and_drone_trees(
         field_trees=field_trees, drone_trees=drone_trees
     )
 
-    # Take the subset field trees that were matched
-    # For each row, the correspondingly-indexed element in matched_drone_tree_inds is the index of
-    # the drone tree this field tree should match with
+    # Compute field trees that were matched
     matched_field_trees = field_trees.iloc[matched_field_tree_inds]
+    # Drop the geometry from the field trees since we don't want to keep it
+    matched_field_trees.drop("geometry", axis=1, inplace=True)
+    # Compute the "unique_ID" for matched drone trees
+    drone_tree_unique_IDs = drone_trees.iloc[matched_drone_tree_inds].unique_ID.to_numpy()
+    # These two variables are now ordered in the same way
 
     # Transfer the attributes to the drone trees
-    drone_trees_with_additional_attributes = pd.merge(
-        left=drone_trees,
+    drone_crowns_with_additional_attributes = pd.merge(
+        left=drone_crown,
         right=matched_field_trees,
-        left_on=drone_trees.index,
-        right_on=np.array(matched_drone_tree_inds),
+        left_on="treetop_unique_ID",
+        right_on=drone_tree_unique_IDs,
         how="left",
+        suffixes=("_drone", "_field")
     )
 
-    # We need to first deal with the matching indices
-    # Then deal with the spatial subset of the drone trees
-    # Then deal with the crosswalk between the drone trees and crowns
+    return drone_crowns_with_additional_attributes
 
 
 
@@ -194,16 +197,20 @@ if __name__ == "__main__":
 
     field_reference_plot_bounds = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)
 
+    DRONE_CROWNS_WITH_FIELD_ATTRIBUTES.mkdir(exist_ok=True, parents=True)
+
     for dataset in overlapping_datasets:
         plot_id = dataset.split("_")[0]
         field_perim = field_reference_plot_bounds.query("plot_id == @plot_id")
 
-        match_field_and_drone_trees(
+        updated_drone_crowns = match_field_and_drone_trees(
             field_trees_path=Path(SHIFTED_FIELD_TREES_FOLDER, dataset + ".gpkg"),
             drone_trees_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_tops.gpkg"),
             drone_crowns_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_crowns.gpkg"),
             field_perim=field_perim,
         )
+
+        updated_drone_crowns.to_file(Path(DRONE_CROWNS_WITH_FIELD_ATTRIBUTES, dataset + ".gpkg"))
 
 #
 #  # Run matching and filter to only matched trees
