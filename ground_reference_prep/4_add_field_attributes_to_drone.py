@@ -1,19 +1,21 @@
-import geopandas as gpd
-import shapely
-import numpy as np
-from pathlib import Path
-from spatial_utils.geospatial import ensure_projected_CRS
-import matplotlib.pyplot as plt
-import pandas as pd
 import sys
+from pathlib import Path
+
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import shapely
+from spatial_utils.geospatial import ensure_projected_CRS
 
 # Add folder where constants.py is to system search path
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
 from constants import (
-    GROUND_REFERENCE_TREES_FILE,
+    GROUND_REFERENCE_PLOTS_FILE,
     SHIFTED_FIELD_TREES_FOLDER,
     TREE_DETECTIONS_FOLDER,
 )
+
 
 # Taken from here:
 # https://stackoverflow.com/questions/6430091/efficient-distance-calculation-between-n-points-and-a-reference-in-numpy-scipy
@@ -124,24 +126,23 @@ def match_field_and_drone_trees(
     field_trees_path,
     drone_trees_path,
     drone_crowns_path,
-    field_perim_file,
+    field_perim,
 ):
     field_trees = gpd.read_file(field_trees_path)
     drone_trees = gpd.read_file(drone_trees_path)
     drone_crown = gpd.read_file(drone_crowns_path)
-    field_perim = gpd.read_file(field_perim_file)
 
     field_trees = ensure_projected_CRS(field_trees)
     drone_trees = drone_trees.to_crs(field_trees.crs)
     drone_crown = drone_crown.to_crs(field_trees.crs)
     field_perim = field_perim.to_crs(field_trees.crs)
 
-    perim_buff = field_perim.buffer(10).geometry[0]
+    # Get the buffered perimiter
+    perim_buff = field_perim.buffer(10).geometry.values[0]
 
     # Consider within vs intersects or other options
     drone_trees = drone_trees[drone_trees.within(perim_buff)]
-
-    # TODO consider filtering so there are only corresponding field-drone pairs
+    drone_trees.index = np.arange(len(drone_trees))
 
     # Maybe filter some of the short trees
     # Compute the full distance matrix or at least the top n matches
@@ -149,61 +150,60 @@ def match_field_and_drone_trees(
         field_trees=field_trees, drone_trees=drone_trees
     )
 
-    # TODO this information will come from a different source
-    field_trees["species"] = [
-        ["ABCO", "PIPO"][i] for i in np.random.randint(0, 2, len(field_trees))
-    ]
-    field_trees["live"] = [
-        ["live", "dead"][i] for i in np.random.randint(0, 2, len(field_trees))
-    ]
+    # Take the subset field trees that were matched
+    # For each row, the correspondingly-indexed element in matched_drone_tree_inds is the index of
+    # the drone tree this field tree should match with
+    matched_field_trees = field_trees.iloc[matched_field_tree_inds]
 
-    # Add information to the drone trees based on the field trees
-    # TODO figure out how to add a null string column
-    # TODO figure out which columns need to be copied over
-    drone_trees["species"] = pd.NA
-    drone_trees["live"] = pd.NA
-
-    drone_trees["species"].iloc[matched_drone_tree_inds] = field_trees["species"].iloc[
-        matched_field_tree_inds
-    ]
-    drone_trees["live"].iloc[matched_drone_tree_inds] = field_trees["live"].iloc[
-        matched_field_tree_inds
-    ]
-
-    drone_trees_attributes_to_copy = drone_trees[["species", "live", "unique_ID"]]
-
-    # Do the additional crosswalking to save to the drone crowns by linking with "tree_crown_id"
-    # for the cronws it's treetop_unique_ID and for the tree tops it's unique_ID
-    drone_crowns_with_additional_attributes = drone_crown.merge(
-        drone_trees_attributes_to_copy,
-        left_on="treetop_unique_ID",
-        right_on="unique_ID",
+    # Transfer the attributes to the drone trees
+    drone_trees_with_additional_attributes = pd.merge(
+        left=drone_trees,
+        right=matched_field_trees,
+        left_on=drone_trees.index,
+        right_on=np.array(matched_drone_tree_inds),
         how="left",
     )
 
-    if True:
-        # More plotting to show that attributes were transfered over
-        f, ax = plt.subplots()
-        drone_crowns_with_additional_attributes.plot("species", legend=True, ax=ax)
-        field_trees.plot("species", ax=ax, edgecolor="k")
-        plt.show()
+    # We need to first deal with the matching indices
+    # Then deal with the spatial subset of the drone trees
+    # Then deal with the crosswalk between the drone trees and crowns
 
-        f, ax = plt.subplots()
-        drone_crowns_with_additional_attributes.plot("live", legend=True, ax=ax)
-        field_trees.plot("live", ax=ax, edgecolor="k")
-        plt.show()
 
 
 if __name__ == "__main__":
-    DETECTED_TREES_FOLDER = Path(
-        "/ofo-share/repos-david/tree-species-prediction/scratch/detected_trees"
-    )
-    match_field_and_drone_trees(
-        field_trees_path=Path(DETECTED_TREES_FOLDER, "field_trees.gpkg"),
-        drone_trees_path=Path(DETECTED_TREES_FOLDER, "tree_tops.gpkg"),
-        drone_crowns_path=Path(DETECTED_TREES_FOLDER, "tree_crowns.gpkg"),
-        field_perim_file=Path(DETECTED_TREES_FOLDER, "field_bounds.gpkg"),
-    )
+    shifted_field_trees = list(SHIFTED_FIELD_TREES_FOLDER.glob("*"))
+    detected_trees = list(TREE_DETECTIONS_FOLDER.glob("*"))
+
+    field_datasets = set([f.stem for f in shifted_field_trees])
+    detected_tree_datasets = set([f.name for f in detected_trees])
+
+    overlapping_datasets = field_datasets.intersection(detected_tree_datasets)
+
+    field_missing_pairs = len(field_datasets) - len(overlapping_datasets)
+    detected_missing_pairs = len(detected_tree_datasets) - len(overlapping_datasets)
+
+    if field_missing_pairs:
+        print(
+            f"Warning: {field_missing_pairs} field datasets do not have corresponding detected trees"
+        )
+
+    if detected_missing_pairs:
+        print(
+            f"Warning: {detected_missing_pairs} detected datasets do not have corresponding field trees"
+        )
+
+    field_reference_plot_bounds = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)
+
+    for dataset in overlapping_datasets:
+        plot_id = dataset.split("_")[0]
+        field_perim = field_reference_plot_bounds.query("plot_id == @plot_id")
+
+        match_field_and_drone_trees(
+            field_trees_path=Path(SHIFTED_FIELD_TREES_FOLDER, dataset + ".gpkg"),
+            drone_trees_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_tops.gpkg"),
+            drone_crowns_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_crowns.gpkg"),
+            field_perim=field_perim,
+        )
 
 #
 #  # Run matching and filter to only matched trees
