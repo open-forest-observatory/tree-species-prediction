@@ -17,8 +17,8 @@ from tree_detection_framework.postprocessing.postprocessing import (
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
 from constants import CHM_FOLDER, TREE_DETECTIONS_FOLDER
 
-CHIP_SIZE = 750
-CHIP_STRIDE = 400
+CHIP_SIZE = 1000
+CHIP_STRIDE = 250
 RESOLUTION = 0.2
 
 
@@ -84,7 +84,7 @@ def detect_trees(
     treecrown_detections = treecrown_detector.predict(raster_vector_dataloader)
     # Suppress overlapping crown predictions. This step can be slow.
     treecrown_detections = multi_region_NMS(
-        treecrown_detections, confidence_column="score", intersection_method="IOS"
+        treecrown_detections, confidence_column="score", intersection_method="IOS", run_per_region_NMS=False
     )
     # Save
     treecrown_detections.save(Path(save_folder, "tree_crowns.gpkg"))
