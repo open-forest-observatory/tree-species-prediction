@@ -50,11 +50,11 @@ def match_trees_singlestratum(
     search_distance_fun_slope=0.1,
     search_distance_fun_intercept=1,
     height_col="height",
+    vis=False,
 ):
-    # It seems this is probably this function:
+    # A reimplementation of
     # https://github.com/open-forest-observatory/ofo-r/blob/3e3d138ffd99539affb7158979d06fc535bc1066/R/tree-detection-accuracy-assessment.R#L164
     # Compute the pairwise distance matrix (dense, I don't see a way around it)
-    # For each (field/drone, need to pick)
     field_tree_points_np = shapely.get_coordinates(field_trees.geometry)
     drone_tree_points_np = shapely.get_coordinates(drone_trees.geometry)
 
@@ -66,42 +66,52 @@ def match_trees_singlestratum(
     field_height = np.expand_dims(field_trees[height_col].to_numpy(), axis=1)
     drone_height = np.expand_dims(drone_trees[height_col].to_numpy(), axis=0)
 
-    # Remove trees that are outside of the matching height thresholds
+    # Compute upper and lower height bounds for matches
     min_drone_height = field_height * (1 - search_height_proportion)
     max_drone_height = field_height * (1 + search_height_proportion)
-    # Remove trees that have too large of a distance from the focal tree
+    # Compute max spatial distances for valid matches
     max_dist = field_height * search_distance_fun_slope + search_distance_fun_intercept
 
-    # Remove impossible matches
-    distance_matrix[drone_height < min_drone_height] = np.nan
-    distance_matrix[drone_height > max_drone_height] = np.nan
-    distance_matrix[distance_matrix > max_dist] = np.nan
+    # Compute which matches fit the criteria using broadcasting to get a matrix representation
+    above_min_height = drone_height > min_drone_height
+    below_max_height = drone_height < max_drone_height
+    below_max_matching_dist = distance_matrix < max_dist
 
-    # Get the inds of the field trees, starting with the tallest ones
+    # Compute which matches fit all three criteria
+    possible_pairings = np.logical_and.reduce([above_min_height, below_max_height, below_max_matching_dist])
 
+    # Extract the indices of possible pairings
+    possible_pairing_field_inds, possible_paring_drone_inds = np.where(possible_pairings)
+    possible_pairing_inds = np.vstack([possible_pairing_field_inds, possible_paring_drone_inds]).T
+
+    # Extract the distances corresponding to the valid matches
+    possible_dists = distance_matrix[possible_pairing_field_inds, possible_paring_drone_inds]
+
+    # Sort so the paired indices are sorted, corresponding to the smallest distance pair first
+    ordered_by_dist = np.argsort(possible_dists)
+    possible_pairing_inds = possible_pairing_inds[ordered_by_dist]
+
+    # Compute the most possible pairs, which is the min of num field and drone trees
+    max_valid_matches = np.min(distance_matrix.shape)
+
+    # Record the valid mathces
     matched_field_tree_inds = []
     matched_drone_tree_inds = []
 
-    for field_ind in np.argsort(-np.squeeze(field_height)):
-        row = distance_matrix[field_ind]
-        # If all nan slice, then no matches are available
-        if np.all(np.isnan(row)):
-            continue
+    # Iterate over the indices
+    for (field_ind, drone_ind) in possible_pairing_inds:
+        # If niether the field or drone tree has already been matched, this is a valid pairing
+        if (field_ind not in matched_field_tree_inds) and (drone_ind not in matched_drone_tree_inds):
+            # Add the matches to the lists
+            matched_field_tree_inds.append(field_ind)
+            matched_drone_tree_inds.append(drone_ind)
 
-        # Compute the lowest non-nan value, indicating the closest valid tree
-        drone_ind = np.nanargmin(row)
+        # Check to see if all possible trees have been matched. Note, the length of matched field
+        # and matched drone inds is the same, so we only need to check one.
+        if len(matched_field_tree_inds) == max_valid_matches:
+            break
 
-        # Add these matches to the lists
-        matched_field_tree_inds.append(field_ind)
-        matched_drone_tree_inds.append(drone_ind)
-
-        # Ensure this matched drone tree does not match with any other field trees
-        distance_matrix[:, drone_ind] = np.nan
-
-    matched_field_tree_inds = np.array(matched_field_tree_inds)
-    matched_drone_tree_inds = np.array(matched_drone_tree_inds)
-
-    if False:
+    if vis:
         # Visualize matches
         f, ax = plt.subplots()
         ax.scatter(x=field_tree_points_np[:, 0], y=field_tree_points_np[:, 1], c="r")
@@ -120,7 +130,7 @@ def match_trees_singlestratum(
         ax.add_collection(lc)
 
         plt.show()
-    return matched_field_tree_inds.tolist(), matched_drone_tree_inds.tolist()
+    return matched_field_tree_inds, matched_drone_tree_inds
 
 
 def match_field_and_drone_trees(
@@ -151,7 +161,7 @@ def match_field_and_drone_trees(
     # Maybe filter some of the short trees
     # Compute the full distance matrix or at least the top n matches
     matched_field_tree_inds, matched_drone_tree_inds = match_trees_singlestratum(
-        field_trees=field_trees, drone_trees=drone_trees
+        field_trees=field_trees, drone_trees=drone_trees, vis=False
     )
 
     # Compute field trees that were matched
