@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import shapely
 from tree_detection_framework.preprocessing.preprocessing import (
     create_dataloader,
     create_intersection_dataloader,
@@ -17,8 +18,8 @@ from tree_detection_framework.postprocessing.postprocessing import (
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
 from constants import CHM_FOLDER, TREE_DETECTIONS_FOLDER
 
-CHIP_SIZE = 1000
-CHIP_STRIDE = 250
+CHIP_SIZE = 1250
+CHIP_STRIDE = 500
 RESOLUTION = 0.2
 
 
@@ -98,5 +99,13 @@ if __name__ == "__main__":
         print(f"Detecting trees for {CHM_file}")
         # Since both the tree tops and tree crowns are saved out, we provide an output folder
         output_folder = Path(TREE_DETECTIONS_FOLDER, CHM_file.stem)
-        # Run tree detection
-        detect_trees(CHM_file=CHM_file, save_folder=output_folder)
+
+        if output_folder.is_dir():
+            print(f"Skipping {CHM_file} because the output already exists")
+            continue
+        try:
+            # Run tree detection
+            detect_trees(CHM_file=CHM_file, save_folder=output_folder)
+        except shapely.errors.GEOSException as e:
+            print(f"Detection for {CHM_file} failed with the following error")
+            print(e)
