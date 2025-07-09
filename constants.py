@@ -49,3 +49,5 @@ DRONE_IMAGES_ROOT = Path("/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/
 CHM_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "CHMs")
 TREE_DETECTIONS_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "detected_trees")
 SHIFTED_FIELD_TREES_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "shifted_field_trees")
+
+DRONE_CROWNS_WITH_FIELD_ATTRIBUTES = Path(INTERMEDIATE_DATA_FOLDER, "drone_crowns_with_field_attributes")
