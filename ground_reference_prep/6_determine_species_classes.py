@@ -53,7 +53,7 @@ species_counts = species_counts.merge(
 species_crosswalk = species_counts
 
 
-# LEVEL 1 CLASSES (only changing subspecies to species)
+# LEVEL 1 CLASSES (only changing subspecies to species and merging the various unknown classes)
 
 primary_species_l1 = (
     'ABCO', 'CADE27', 'NODE3', 'PSME', 'PIPO', 'PILA', 'ABMA', 'ABMAS', 'QUCH2', 'QUKE', 'PIJE',
@@ -61,7 +61,12 @@ primary_species_l1 = (
 species_crosswalk['primary_species_l1'] = species_crosswalk["species_code"].isin(primary_species_l1)
 
 mapping_l1 = {
-    'ABMAS': 'ABMA'
+    'ABMAS': 'ABMA',
+    'UNKNCONIFER': 'UNK',
+    'UNKSNAG': 'UNK',
+    'UNK': 'UNK',
+    'PI': 'UNK',
+    'AB': 'UNK'
 }
 species_crosswalk['species_code_l1'] = species_crosswalk['species_code'].replace(mapping_l1)
 
@@ -88,6 +93,7 @@ primary_species_l3 = primary_species_l2 + ('AB',)
 species_crosswalk['primary_species_l3'] = species_crosswalk["species_code"].isin(primary_species_l3)
 
 mapping_l3_addl = {
+    'AB': 'FIR',
     'ABCO': 'FIR',
     'ABMA': 'FIR',
     'ABMAS': 'FIR',
@@ -113,6 +119,7 @@ mapping_l4_addl = {
     'CADE27': 'CUPR',
     'JUOC': 'CUPR',
     'THPL': 'CUPR',
+    'PI': 'PI',
     'PIPO': 'PI',
     'PIJE': 'PI',
     'PILA': 'PI',
