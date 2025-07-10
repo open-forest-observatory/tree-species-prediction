@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import geopandas as gpd
 import pandas as pd
@@ -23,29 +22,15 @@ ground_plot_ids = ground_drone_pairs['plot_id'].unique()
 # Filter ground trees to only those in the selected ground plot IDs
 ground_trees = ground_trees[ground_trees['plot_id'].isin(ground_plot_ids)]
 
-# Get all unique species with counts, to inspect interactively
+
+# Repeat the above two commands, but in a single pandas chain using the `agg` method
 species_counts = (
-    ground_trees['species_code']
-    .value_counts()
-    .reset_index()
-    .rename(columns={'count': 'n_trees'})
-)
-
-
-# Get the number of unique plots that each species appears in, ordered by decreasing frequency, with
-# the resulting count column named 'n_plots', to inspect interactively
-species_plot_counts = (
     ground_trees
-    .groupby('species_code')['plot_id']
-    .nunique()
+    .groupby('species_code')
+    .agg(n_trees=('species_code', 'size'),
+         n_plots=('plot_id', 'nunique'))
     .reset_index()
-    .sort_values(by='plot_id', ascending=False)
-    .rename(columns={'plot_id': 'n_plots'})
-)
-
-# Join the plot count to the tree count
-species_counts = species_counts.merge(
-    species_plot_counts, left_on='species_code', right_on='species_code', how='left'
+    .sort_values(by='n_trees', ascending=False)
 )
 
 
@@ -99,7 +84,6 @@ mapping_l3_addl = {
     'ABMAS': 'FIR',
     'ABGR': 'FIR',
     'ABAM': 'FIR',
-    'AB': 'FIR',
     'PSME': 'FIR',  # Douglas fir, not a true fir, but lookalike
     'NODE3': 'QUEV',  # evergreen oak
     'PIMO3': 'PIFIVE',
