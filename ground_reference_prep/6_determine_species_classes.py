@@ -20,7 +20,7 @@ ground_drone_pairs = pd.read_csv(
 # Get unique selected ground plot IDs
 ground_plot_ids = ground_drone_pairs['plot_id'].unique()
 
-# Filter groud trees to only those in the selected ground plot IDs
+# Filter ground trees to only those in the selected ground plot IDs
 ground_trees = ground_trees[ground_trees['plot_id'].isin(ground_plot_ids)]
 
 # Get all unique species with counts, to inspect interactively
