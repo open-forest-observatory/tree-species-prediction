@@ -213,7 +213,8 @@ if __name__ == "__main__":
         )
 
         if len(matching_row) == 0:
-            raise ValueError("Multiple or now matching rows")
+            print(f"Multiple or no matching rows for {low_oblique_ID} and {high_nadir_ID}. Skipping.")
+            continue
 
         # use the `plot_id` field to determine the corresponding plot ID
         # Then point to that file and run this pipeline

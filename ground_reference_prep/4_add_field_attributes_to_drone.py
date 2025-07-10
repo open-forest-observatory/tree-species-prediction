@@ -130,6 +130,8 @@ def match_trees_singlestratum(
         ax.add_collection(lc)
 
         plt.show()
+
+    print(f"Identified {len(matched_field_tree_inds)} matches")
     return matched_field_tree_inds, matched_drone_tree_inds
 
 
@@ -227,13 +229,16 @@ if __name__ == "__main__":
         # Identify the perimiter as a single row from the dataframe
         field_perim = field_reference_plot_bounds.query("plot_id == @plot_id")
 
-        # Create the crowns with additional attributes from the field surveyed trees
-        updated_drone_crowns = match_field_and_drone_trees(
-            field_trees_path=Path(SHIFTED_FIELD_TREES_FOLDER, dataset + ".gpkg"),
-            drone_trees_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_tops.gpkg"),
-            drone_crowns_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_crowns.gpkg"),
-            field_perim=field_perim,
-        )
-
-        # Save the updated crowns, knowing the output directory has already been created
-        updated_drone_crowns.to_file(Path(DRONE_CROWNS_WITH_FIELD_ATTRIBUTES, dataset + ".gpkg"))
+        try:
+            # Create the crowns with additional attributes from the field surveyed trees
+            updated_drone_crowns = match_field_and_drone_trees(
+                field_trees_path=Path(SHIFTED_FIELD_TREES_FOLDER, dataset + ".gpkg"),
+                drone_trees_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_tops.gpkg"),
+                drone_crowns_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_crowns.gpkg"),
+                field_perim=field_perim,
+            )
+            # Save the updated crowns, knowing the output directory has already been created
+            updated_drone_crowns.to_file(Path(DRONE_CROWNS_WITH_FIELD_ATTRIBUTES, dataset + ".gpkg"))
+        except Exception as e:
+            print(f"datataset {dataset} failed with the following error")
+            print(e)
