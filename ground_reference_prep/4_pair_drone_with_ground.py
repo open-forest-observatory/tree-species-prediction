@@ -211,7 +211,9 @@ def match_ground_plots_with_drone_missions(
     joined["year_diff"] = (
         joined["drone_date"].dt.year - joined["survey_date_parsed"].dt.year
     ).abs()
-    valid_pairs = joined[joined["year_diff"] <= 8]
+    
+    # Keep all plots from project NEON2023. Others must satisfy year difference check.
+    valid_pairs = joined[(joined["project_name"] == "NEON2023") | (joined["year_diff"] <= 8)]
 
     # Rename _1 to _hn and _2 to _lo
     paired_columns_rename = {
