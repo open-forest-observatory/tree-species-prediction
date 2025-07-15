@@ -135,6 +135,10 @@ def pair_drone_missions(drone_missions_gdf):
 
     paired_valid = paired[paired.apply(is_valid_pair, axis=1)].reset_index(drop=True)
 
+    # Force include pair 337 & 338
+    forced_pair = paired[(paired["mission_id_1"] == "000337") & (paired["mission_id_2"] == "000338")]
+    paired_valid = pd.concat([paired_valid, forced_pair], ignore_index=True)
+
     # Calculate absolute date difference
     paired_valid["date_diff_days"] = (
         (
