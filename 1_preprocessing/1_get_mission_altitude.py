@@ -77,6 +77,12 @@ def main(camera_file, dtm_file, output_csv, verbose):
     cv = np.std(heights_np) / np.mean(heights_np)
     correlation = np.corrcoef(ground_np, camera_np)[0, 1]  # Get value from the correlation matrix
 
+    # Compute sd_photogrammetry_altitude with 5th-95th percentile clipping
+    lower_bound = np.percentile(heights_np, 5)
+    upper_bound = np.percentile(heights_np, 95)
+    filtered_altitudes = heights_np[(heights_np >= lower_bound) & (heights_np <= upper_bound)]
+    sd_photogrammetry_altitude = np.std(filtered_altitudes)
+
     if verbose:
         stats = {
             "count": len(heights_np),
@@ -86,7 +92,8 @@ def main(camera_file, dtm_file, output_csv, verbose):
             "max": np.max(heights_np),
             "median": np.median(heights_np),
             "cv": cv,
-            "flight_terrain_correlation_photogrammetry": correlation
+            "flight_terrain_correlation_photogrammetry": correlation,
+            "sd_photogrammetry_altitude": sd_photogrammetry_altitude
         }
 
         print("Height above ground summary stats:")
@@ -97,7 +104,8 @@ def main(camera_file, dtm_file, output_csv, verbose):
     summary_row = {
         "mean_altitude": np.mean(heights_np),
         "cv_altitude": cv,
-        "flight_terrain_correlation_photogrammetry": correlation
+        "flight_terrain_correlation_photogrammetry": correlation,
+        "sd_photogrammetry_altitude": sd_photogrammetry_altitude
     }
 
     # Convert to DataFrame and export as CSV
