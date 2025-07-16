@@ -16,6 +16,7 @@ def classify_mission(row):
     altitude = row["mean_altitude"]
     pitch = row["camera_pitch_derived"]
     terrain_corr = row["flight_terrain_correlation_photogrammetry"]
+    sd_photogrammetry_altitude = row["sd_photogrammetry_altitude"]
     front_overlap = row["overlap_front_nominal"]
     side_overlap = row["overlap_side_nominal"]
 
@@ -29,22 +30,22 @@ def classify_mission(row):
     ):
         return "unknown"
 
-    # Must meet terrain fidelity requirement
-    if terrain_corr <= 0.75:
+    # Must meet terrain fidelity or SD requirement
+    if not (terrain_corr > 0.75 or sd_photogrammetry_altitude < 12):
         return "low-terrain-fidelity"
 
     # High-Nadir requirements
     if (
-        110 <= altitude <= 150
+        100 <= altitude <= 160
         and 0 <= pitch <= 10
-        and front_overlap >= 90
-        and side_overlap >= 80
+        and ((front_overlap >= 90 and side_overlap >= 80)
+        or (front_overlap >= 85 and side_overlap >= 85))
     ):
         return "high-nadir"
 
     # Low-Oblique requirements
     if (
-        60 <= altitude <= 100
+        60 <= altitude <= 120
         and 18 <= pitch <= 38
         and front_overlap >= 70
         and side_overlap >= 60
