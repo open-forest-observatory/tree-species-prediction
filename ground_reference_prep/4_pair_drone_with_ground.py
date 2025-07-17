@@ -150,16 +150,7 @@ def pair_drone_missions(drone_missions_gdf):
         .dt.days
     )
 
-    # Sort so pairs with smaller date differences b/w missions come first
-    paired_valid_sorted = paired_valid.sort_values("date_diff_days")
-
-    # Only use each low-oblique mission once, retaining the pair with the closest (in time) nadir mission to it
-    # Note: This can have the same high-nadir mission matched to multiple low-oblique missions
-    paired_drone_missions_gdf = paired_valid_sorted.drop_duplicates(
-        subset="mission_id_2", keep="first"
-    )
-
-    return paired_drone_missions_gdf
+    return paired_valid
 
 
 def match_ground_plots_with_drone_missions(
@@ -228,6 +219,13 @@ def match_ground_plots_with_drone_missions(
         "earliest_date_derived_2": "earliest_date_derived_lo",
     }
     valid_pairs.rename(columns=paired_columns_rename, inplace=True)
+
+    # Sort so smallest date difference comes first
+    valid_pairs = valid_pairs.sort_values("year_diff")
+
+    # Ensure each LO mission is matched only once per ground plot
+    # For each (mission_id_lo, plot_id), keep only the row with the smallest year_diff
+    valid_pairs = valid_pairs.drop_duplicates(subset=["mission_id_lo", "plot_id"], keep="first")
 
     ground_plot_drone_missions_matches = valid_pairs[
         [
