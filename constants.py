@@ -41,6 +41,7 @@ MISSIONS_OUTSIDE_DTM_LIST = Path(
 )
 # Inputs for 4_pair_drone_with_ground.py
 GROUND_REFERENCE_PLOTS_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-reference_plots.gpkg")
+ALL_MISSIONS_METADATA_FILE = Path("ofo-share/catalog-data-prep/01_raw-imagery-ingestion/metadata/3_final/ofo-all-missions-metadata.gpkg")
 DRONE_MISSIONS_WITH_ALT_FILE = Path(PREPROCESSING_FOLDER, "ofo-all-missions-metadata-with-altitude.gpkg")
 
 GROUND_PLOT_DRONE_MISSION_MATCHES_FILE = Path(INTERMEDIATE_DATA_FOLDER , "ground_plot_drone_mission_matches.csv")

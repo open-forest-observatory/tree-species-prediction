@@ -28,8 +28,8 @@ mission_ids = [
 
 # Iterate through folders
 for mission_id in tqdm(mission_ids):
-    mission_id_folder = f"{mission_id}_01"
-    base_remote_path = f"{ALL_MISSIONS_REMOTE_FOLDER}/{mission_id}/processed_01/full"
+    mission_id_folder = f"{mission_id}"
+    base_remote_path = f"{ALL_MISSIONS_REMOTE_FOLDER}/{mission_id}/processed_02/full"
     camera_file = f"{mission_id_folder}_cameras.xml"
     dtm_file = f"{mission_id_folder}_dtm-ptcloud.tif"
     output_csv = MISSION_ALTITUDES_FOLDER / f"{mission_id_folder}_altitude_summary.csv"
