@@ -54,4 +54,14 @@ SHIFTED_FIELD_TREES_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "shifted_field_trees
 DRONE_CROWNS_WITH_FIELD_ATTRIBUTES = Path(INTERMEDIATE_DATA_FOLDER, "drone_crowns_with_field_attributes")
 
 # Output of 6_determine_species_classes.py
-SPECIES_CLASS_CROSSWALK_FILE = Path(INTERMEDIATE_DATA_FOLDER, "species_class_crosswalk.csv")
+SPECIES_CLASS_CROSSWALK_FILE = Path(
+    INTERMEDIATE_DATA_FOLDER, "species_class_crosswalk.csv"
+)
+
+DERIVED_METASHAPE_CONFIGS_FOLDER = Path(
+    str(DERIVED_METASHAPE_CONFIGS_FOLDER) + "_merged_oblique_nadir"
+)
+PHOTOGRAMMETRY_FOLDER = Path(str(PHOTOGRAMMETRY_FOLDER) + "_merged_oblique_nadir")
+
+# Geograypher-rendered species labels
+RENDERED_LABELS = Path(INTERMEDIATE_DATA_FOLDER, "rendered_image_labels")
