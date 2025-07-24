@@ -3,17 +3,13 @@ import geopandas as gpd
 import pandas as pd
 import sys
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
-                       GROUND_REFERENCE_TREES_FILE,
-                       SPECIES_CLASS_CROSSWALK_FILE)
+import _bootstrap
+from configs.path_config import path_config
 
 
-
-ground_trees = gpd.read_file(GROUND_REFERENCE_TREES_FILE)
+ground_trees = gpd.read_file(path_config.ground_reference_trees_file)
 ground_drone_pairs = pd.read_csv(
-    GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
+    path_config.ground_plot_drone_mission_matches_file,
     dtype={"plot_id": str})
 
 # Get unique selected ground plot IDs
@@ -150,6 +146,6 @@ species_crosswalk['species_code_l4'] = species_crosswalk['species_code'].replace
 
 # Write the result
 species_crosswalk.to_csv(
-    SPECIES_CLASS_CROSSWALK_FILE,
+    path_config.species_class_crosswalk_file,
     index=False
 )

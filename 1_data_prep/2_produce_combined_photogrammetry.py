@@ -1,21 +1,20 @@
-import sys
 from pathlib import Path
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (
+'''from constants import (
     AUTOMATE_METASHAPE_PATH,
     DERIVED_METASHAPE_CONFIGS_FOLDER,
     METASHAPE_PYTHON_PATH,
     PHOTOGRAMMETRY_FOLDER,
     RAW_IMAGE_SETS_FOLDER,
-)
+)'''
 
-# TODO consider other ways to find this location
-sys.path.append(str(Path(AUTOMATE_METASHAPE_PATH, "python")))
+import _bootstrap
+from configs.path_config import path_config
+
+# path resolved in _bootstrap.py
 from metashape_workflow_functions import make_derived_yaml
 
-METASHAPE_CONFIG = Path(AUTOMATE_METASHAPE_PATH, "config", "config-base.yml")
+METASHAPE_CONFIG = Path(path_config.automate_metashape_path, "config", "config-base.yml")
 
 
 def produce_combined_config(imagery_folder: Path):
@@ -33,7 +32,7 @@ def produce_combined_config(imagery_folder: Path):
     ]
 
     # Create the output folders for photogrammetry outputs
-    project_folder = Path(PHOTOGRAMMETRY_FOLDER, run_name)
+    project_folder = Path(path_config.photogrammetry_folder, run_name)
     output_folder = Path(project_folder, "outputs")
 
     # Build and override dict that will update the base config with run-specific information
@@ -50,7 +49,7 @@ def produce_combined_config(imagery_folder: Path):
         "buildPointCloud": {"remove_after_export": True},
     }
 
-    output_config_file = Path(DERIVED_METASHAPE_CONFIGS_FOLDER, run_name + ".yml")
+    output_config_file = Path(path_config.derived_metashape_configs_folder, run_name + ".yml")
     # Save the derived config
     make_derived_yaml(
         METASHAPE_CONFIG, output_path=output_config_file, override_options=override_dict
@@ -59,17 +58,17 @@ def produce_combined_config(imagery_folder: Path):
 
 def make_photogrammetry_run_scripts(n_chunks=4):
     # List all configs
-    derived_configs = sorted(DERIVED_METASHAPE_CONFIGS_FOLDER.glob("*yml"))
+    derived_configs = sorted(path_config.derived_metashape_configs_folder.glob("*yml"))
     # TODO consider shuffling the files in case there's a structure to which datasets are large
     # The path to the metashape runner script
     metashape_script_path = str(
-        Path(AUTOMATE_METASHAPE_PATH, "python", "metashape_workflow.py")
+        Path(path_config.automate_metashape_path, "python", "metashape_workflow.py")
     )
     # Create a string that contains the python run command (one for each mission-pair to process)
     run_strings = [
         " ".join(
             [
-                METASHAPE_PYTHON_PATH,
+                path_config.metashape_python_path,
                 metashape_script_path,
                 "--config_file",
                 str(derived_config),
@@ -88,7 +87,7 @@ def make_photogrammetry_run_scripts(n_chunks=4):
     for i in range(n_chunks):
         # Create the named output file
         with open(
-            Path(DERIVED_METASHAPE_CONFIGS_FOLDER, f"run_script_{i:02}.sh"), "w"
+            Path(path_config.derived_metashape_configs_folder, f"run_script_{i:02}.sh"), "w"
         ) as output_file_h:
             # Get the corresponding lines and write them out
             chunk_run_strings = run_strings[splits[i] : splits[i + 1]]
@@ -97,7 +96,7 @@ def make_photogrammetry_run_scripts(n_chunks=4):
 
 if __name__ == "__main__":
     # List all the imagery folders
-    imagery_sets = RAW_IMAGE_SETS_FOLDER.glob("*")
+    imagery_sets = path_config.raw_image_sets_folder.glob("*")
     # For each folder, produce the corresponding config
     for imagery_set in imagery_sets:
         produce_combined_config(imagery_set)
