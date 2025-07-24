@@ -8,12 +8,8 @@ import pandas as pd
 from shapely.geometry import MultiPolygon
 from tqdm import tqdm
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (ALL_MISSIONS_REMOTE_FOLDER, DRONE_IMAGES_ROOT,
-                       DRONE_MISSIONS_WITH_ALT_FILE,
-                       GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
-                       GROUND_REFERENCE_PLOTS_FILE, RAW_IMAGE_SETS_FOLDER)
+import _bootstrap
+from configs.path_config import path_config
 
 
 def get_mission_geom(gdf: gpd.GeoDataFrame, mission_id: int):
@@ -30,14 +26,14 @@ def get_mission_geom(gdf: gpd.GeoDataFrame, mission_id: int):
 
 
 def download_image_metadata(mission_id: str, dest_folder: Path):
-    src = f"{ALL_MISSIONS_REMOTE_FOLDER}/{mission_id}/metadata-images/{mission_id}_image-metadata.gpkg"
+    src = f"{path_config.all_missions_remote_folder}/{mission_id}/metadata-images/{mission_id}_image-metadata.gpkg"
     dest = dest_folder / f"{mission_id}_image-metadata.gpkg"
     subprocess.run(["rclone", "copyto", src, str(dest)], check=True)
     print(f"Downloaded metadata for {mission_id}")
 
 
 def create_hardlinks_for_images(
-    filtered_gdf, dest_folder, raw_images_root=DRONE_IMAGES_ROOT
+    filtered_gdf, dest_folder, raw_images_root=path_config.drone_images_root
 ):
     for rel_path_str in filtered_gdf["image_path_ofo"]:
         rel_path = Path(
@@ -80,10 +76,10 @@ def process_mission(mission_id, mission_type, parent_folder, combined_intersecti
 
 
 def main():
-    plot_mission_matches = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
+    plot_mission_matches = pd.read_csv(path_config.ground_plot_drone_mission_matches_file)
     # Project to meters-based CRS
-    mission_meta = gpd.read_file(DRONE_MISSIONS_WITH_ALT_FILE).to_crs(32610)
-    plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE).to_crs(32610)
+    mission_meta = gpd.read_file(path_config.drone_missions_with_alt_file).to_crs(32610)
+    plots_gdf = gpd.read_file(path_config.ground_reference_plots_file).to_crs(32610)
 
     # Buffer the plots by 100m
     plots_gdf['geometry'] = plots_gdf.geometry.buffer(100)
@@ -95,7 +91,7 @@ def main():
 
         # Create parent folder as plotID_nadirmissionID_obliquemissionID
         parent_folder = (
-            Path(RAW_IMAGE_SETS_FOLDER) / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
+            Path(path_config.raw_image_sets_folder) / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
         )
         parent_folder.mkdir(parents=True, exist_ok=True)
 

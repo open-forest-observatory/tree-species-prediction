@@ -6,9 +6,8 @@ import numpy as np
 import rioxarray
 from rasterio.enums import Resampling
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import PHOTOGRAMMETRY_FOLDER, CHM_FOLDER
+import _bootstrap
+from configs.path_config import path_config
 
 
 def compute_CHM(
@@ -83,7 +82,7 @@ def compute_CHM(
 
 if __name__ == "__main__":
     # List all the folders, corresponding to photogrammetry for a nadir-oblique pair
-    photogrammetry_run_folders = PHOTOGRAMMETRY_FOLDER.glob("*_*")
+    photogrammetry_run_folders = path_config.photogrammetry_folder.glob("*_*")
     # Iterate over the folders
     for photogrammetry_run_folder in photogrammetry_run_folders:
         # The last part of the path is the <nadir id>_<oblique id> pair
@@ -101,7 +100,7 @@ if __name__ == "__main__":
             continue
 
         # All the outputs will be saved to one folder
-        output_chm_path = Path(CHM_FOLDER, f"{run_ID}.tif")
+        output_chm_path = Path(path_config.chm_folder, f"{run_ID}.tif")
         # Run the computation
         compute_CHM(
             dsm_path=dsm_file, dtm_path=dtm_file, output_chm_path=output_chm_path

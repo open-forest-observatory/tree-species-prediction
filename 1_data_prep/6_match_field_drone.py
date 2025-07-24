@@ -13,14 +13,8 @@ from shapely.affinity import translate
 from tqdm import tqdm
 from spatial_utils.geospatial import ensure_projected_CRS
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (
-    GROUND_REFERENCE_TREES_FILE,
-    OVERLAPPING_PLOTS_FILE,
-    SHIFTED_FIELD_TREES_FOLDER,
-    TREE_DETECTIONS_FOLDER,
-)
+import _bootstrap
+from configs.path_config import path_config
 
 
 def find_best_shift(
@@ -166,11 +160,11 @@ def align_plot(field_trees, drone_trees, height_column="height", vis=False):
 
 if __name__ == "__main__":
     # Read the pairings between drone and field plots
-    plot_pairings = pd.read_csv(OVERLAPPING_PLOTS_FILE)
+    plot_pairings = pd.read_csv(path_config.overlapping_plots_file)
     # List all the detected trees
-    detected_tree_folders = sorted(TREE_DETECTIONS_FOLDER.glob("*"))
+    detected_tree_folders = sorted(path_config.tree_detections_folder.glob("*"))
     # Read the ground reference trees
-    ground_reference_trees = gpd.read_file(GROUND_REFERENCE_TREES_FILE)
+    ground_reference_trees = gpd.read_file(path_config.ground_reference_trees_file)
 
     # Filter out any dead trees
     # TODO consider only keeping "L" ones rather than discarding "D", since there are over 1000 rows
@@ -227,6 +221,6 @@ if __name__ == "__main__":
         )
 
         # Write out the shifted field trees
-        output_file = Path(SHIFTED_FIELD_TREES_FOLDER, ID + ".gpkg")
+        output_file = Path(path_config.shifted_field_trees_folder, ID + ".gpkg")
         output_file.parent.mkdir(exist_ok=True, parents=True)
         shifted_field_trees.to_file(output_file)

@@ -1,0 +1,17 @@
+name: my-tree-pipeline
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge 
+dependencies: # work in progress env file
+  - python=3.10
+  - pytorch=2.1
+  - torchvision=0.15
+  - torchaudio=2.1
+  - pytorch-cuda=11.8
+  - geopandas
+  - pandas
+  - numpy
+  - matplotlib
+  - scipy
+  - tqdm

@@ -8,14 +8,8 @@ import pandas as pd
 import shapely
 from spatial_utils.geospatial import ensure_projected_CRS
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (
-    GROUND_REFERENCE_PLOTS_FILE,
-    SHIFTED_FIELD_TREES_FOLDER,
-    TREE_DETECTIONS_FOLDER,
-    DRONE_CROWNS_WITH_FIELD_ATTRIBUTES,
-)
+import _bootstrap
+from configs.path_config import path_config
 
 
 # Taken from here:
@@ -192,8 +186,8 @@ def match_field_and_drone_trees(
 
 if __name__ == "__main__":
     # List files
-    shifted_field_trees = list(SHIFTED_FIELD_TREES_FOLDER.glob("*"))
-    detected_trees = list(TREE_DETECTIONS_FOLDER.glob("*"))
+    shifted_field_trees = list(path_config.shifted_field_trees_folder.glob("*"))
+    detected_trees = list(path_config.tree_detections_folder.glob("*"))
 
     # Compute the dataset ID without the extension
     field_datasets = set([f.stem for f in shifted_field_trees])
@@ -217,10 +211,10 @@ if __name__ == "__main__":
         )
 
     # Load the spatial bounds of the field survey, for all plots
-    field_reference_plot_bounds = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)
+    field_reference_plot_bounds = gpd.read_file(path_config.ground_reference_plots_file)
 
     # Create the output directory
-    DRONE_CROWNS_WITH_FIELD_ATTRIBUTES.mkdir(exist_ok=True, parents=True)
+    path_config.drone_crowns_with_field_attributes.mkdir(exist_ok=True, parents=True)
     for dataset in overlapping_datasets:
         # Extract which field plot this dataset corresponds to
         plot_id = dataset.split("_")[0]
@@ -229,11 +223,11 @@ if __name__ == "__main__":
 
         # Create the crowns with additional attributes from the field surveyed trees
         updated_drone_crowns = match_field_and_drone_trees(
-            field_trees_path=Path(SHIFTED_FIELD_TREES_FOLDER, dataset + ".gpkg"),
-            drone_trees_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_tops.gpkg"),
-            drone_crowns_path=Path(TREE_DETECTIONS_FOLDER, dataset, "tree_crowns.gpkg"),
+            field_trees_path=Path(path_config.shifted_field_trees_folder, dataset + ".gpkg"),
+            drone_trees_path=Path(path_config.tree_detections_folder, dataset, "tree_tops.gpkg"),
+            drone_crowns_path=Path(path_config.tree_detections_folder, dataset, "tree_crowns.gpkg"),
             field_perim=field_perim,
         )
 
         # Save the updated crowns, knowing the output directory has already been created
-        updated_drone_crowns.to_file(Path(DRONE_CROWNS_WITH_FIELD_ATTRIBUTES, dataset + ".gpkg"))
+        updated_drone_crowns.to_file(Path(path_config.drone_crowns_with_field_attributes, dataset + ".gpkg"))
