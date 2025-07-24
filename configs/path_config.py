@@ -59,6 +59,8 @@ class PathConfig:
         preprocessing_folder, "ofo-all-missions-metadata-with-altitude.gpkg"
     )
 
+    all_missions_metadata_file = Path("ofo-share/catalog-data-prep/01_raw-imagery-ingestion/metadata/3_final/ofo-all-missions-metadata.gpkg")
+
     ground_plot_drone_mission_matches_file: Path = Path(
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )

@@ -13,6 +13,7 @@ def classify_mission(row):
     altitude = row["mean_altitude"]
     pitch = row["camera_pitch_derived"]
     terrain_corr = row["flight_terrain_correlation_photogrammetry"]
+    sd_photogrammetry_altitude = row["sd_photogrammetry_altitude"]
     front_overlap = row["overlap_front_nominal"]
     side_overlap = row["overlap_side_nominal"]
 
@@ -26,22 +27,22 @@ def classify_mission(row):
     ):
         return "unknown"
 
-    # Must meet terrain fidelity requirement
-    if terrain_corr <= 0.75:
+    # Must meet terrain fidelity or SD requirement
+    if not (terrain_corr > 0.75 or sd_photogrammetry_altitude < 12):
         return "low-terrain-fidelity"
 
     # High-Nadir requirements
     if (
-        110 <= altitude <= 150
+        100 <= altitude <= 160
         and 0 <= pitch <= 10
-        and front_overlap >= 90
-        and side_overlap >= 80
+        and ((front_overlap >= 90 and side_overlap >= 80)
+        or (front_overlap >= 85 and side_overlap >= 85))
     ):
         return "high-nadir"
 
     # Low-Oblique requirements
     if (
-        60 <= altitude <= 100
+        60 <= altitude <= 120
         and 18 <= pitch <= 38
         and front_overlap >= 70
         and side_overlap >= 60
@@ -132,6 +133,10 @@ def pair_drone_missions(drone_missions_gdf):
 
     paired_valid = paired[paired.apply(is_valid_pair, axis=1)].reset_index(drop=True)
 
+    # Force include pair 337 & 338
+    forced_pair = paired[(paired["mission_id_1"] == "000337") & (paired["mission_id_2"] == "000338")]
+    paired_valid = pd.concat([paired_valid, forced_pair], ignore_index=True)
+
     # Calculate absolute date difference
     paired_valid["date_diff_days"] = (
         (
@@ -142,16 +147,7 @@ def pair_drone_missions(drone_missions_gdf):
         .dt.days
     )
 
-    # Sort so pairs with smaller date differences b/w missions come first
-    paired_valid_sorted = paired_valid.sort_values("date_diff_days")
-
-    # Only use each low-oblique mission once, retaining the pair with the closest (in time) nadir mission to it
-    # Note: This can have the same high-nadir mission matched to multiple low-oblique missions
-    paired_drone_missions_gdf = paired_valid_sorted.drop_duplicates(
-        subset="mission_id_2", keep="first"
-    )
-
-    return paired_drone_missions_gdf
+    return paired_valid
 
 
 def match_ground_plots_with_drone_missions(
@@ -208,7 +204,9 @@ def match_ground_plots_with_drone_missions(
     joined["year_diff"] = (
         joined["drone_date"].dt.year - joined["survey_date_parsed"].dt.year
     ).abs()
-    valid_pairs = joined[joined["year_diff"] <= 8]
+    
+    # Keep all plots from project NEON2023. Others must satisfy year difference check.
+    valid_pairs = joined[(joined["project_name"] == "NEON2023") | (joined["year_diff"] <= 8)]
 
     # Rename _1 to _hn and _2 to _lo
     paired_columns_rename = {
@@ -218,6 +216,13 @@ def match_ground_plots_with_drone_missions(
         "earliest_date_derived_2": "earliest_date_derived_lo",
     }
     valid_pairs.rename(columns=paired_columns_rename, inplace=True)
+
+    # Sort so smallest date difference comes first
+    valid_pairs = valid_pairs.sort_values("year_diff")
+
+    # Ensure each LO mission is matched only once per ground plot
+    # For each (mission_id_lo, plot_id), keep only the row with the smallest year_diff
+    valid_pairs = valid_pairs.drop_duplicates(subset=["mission_id_lo", "plot_id"], keep="first")
 
     ground_plot_drone_missions_matches = valid_pairs[
         [
