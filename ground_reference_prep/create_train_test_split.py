@@ -4,7 +4,7 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 from sklearn.cluster import HDBSCAN
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
@@ -13,56 +13,57 @@ sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
 from constants import (
     GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
     GROUND_REFERENCE_PLOTS_FILE,
+    TRAIN_TEST_SPLIT_FILE,
 )
 
 MIN_CLUSTER_SIZE = 3
 MIN_SAMPLES = 3
 TEST_FRACTION = 0.2
-OUTPUT_PAIRED_SPLIT_FILE = "/ofo-share/scratch-amritha/tree-species-scratch/processed_02/plot_mission_pairs_with_split.csv"
+SEED = 35
 
-def hdbscan_spatial_split(plot_gdf, min_cluster_size=MIN_CLUSTER_SIZE, min_samples=MIN_SAMPLES, test_frac=TEST_FRACTION, seed=35):
+def hdbscan_spatial_split(plot_gdf, min_cluster_size=MIN_CLUSTER_SIZE, min_samples=MIN_SAMPLES, test_frac=TEST_FRACTION, seed=SEED):
+    # Convert to meters based CRS
     plot_gdf = plot_gdf.to_crs(32610)
 
-    # Extract centroids
+    # Extract centroids of each plot geometry for clustering
     coords = np.array([[geom.centroid.x, geom.centroid.y] for geom in plot_gdf.geometry])
-    centroids = np.array(coords)
-    db = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples).fit(coords)
-    plot_gdf["cluster"] = db.labels_
+    clusterer = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples).fit(coords)
+    plot_gdf["cluster"] = clusterer.labels_
 
-    # Split into valid and noise
-    valid_mask = plot_gdf["cluster"] != -1
-    noise_mask = plot_gdf["cluster"] == -1
+    # Separate out the valid clustered points and noise (labeled as -1)
+    valid = plot_gdf[plot_gdf["cluster"] != -1].copy()
+    noise = plot_gdf[plot_gdf["cluster"] == -1].copy()
 
-    valid = plot_gdf[valid_mask].copy()
-    noise = plot_gdf[noise_mask].copy()
-
-    # Compute cluster centroids
+    # Reassign noise points to the nearest cluster
+    # For this, we compute the centroids of each cluster
+    # and use a KDTree for efficient nearest neighbor search
     cluster_centroids = valid.groupby("cluster").geometry.apply(lambda g: g.unary_union.centroid)
     cluster_centroids_coords = np.array([[pt.x, pt.y] for pt in cluster_centroids])
     cluster_ids = cluster_centroids.index.to_numpy()
+    tree = KDTree(cluster_centroids_coords)
 
-    # Build KDTree from cluster centroids
-    tree = cKDTree(cluster_centroids_coords)
-
-    # Assign each noise point to nearest cluster
+    # Compute centroids of noise plot geometries
     noise_centroids = np.array([[geom.centroid.x, geom.centroid.y] for geom in noise.geometry])
+    # Query the nearest cluster centroid for each noise point
     _, nearest_idx = tree.query(noise_centroids)
+    # Assign the cluster ID of the nearest centroid to the noise points
     assigned_clusters = cluster_ids[nearest_idx]
     noise["cluster"] = assigned_clusters
 
-    # Merge back
+    # Merge valid and noise plots back together
     plot_gdf = pd.concat([valid, noise], ignore_index=True)
 
-    # Compute convex hulls for all clusters
+    # Compute convex hulls for all clusters. This is done only to help visualize the clusters later.
     cluster_hulls = plot_gdf.groupby("cluster").geometry.apply(lambda x: x.unary_union.convex_hull)
     plot_gdf["cluster_convex_hull"] = plot_gdf["cluster"].map(cluster_hulls)
 
-    # Train/test split by cluster
     rng = np.random.default_rng(seed)
     unique_clusters = plot_gdf["cluster"].unique()
     print(f"Number of clusters (including reassigned noise): {len(unique_clusters)}")
-    test_cluster_count = int(len(unique_clusters) * test_frac)
 
+    # Calculate number of clusters to assign to test set, using the specified fraction
+    test_cluster_count = int(len(unique_clusters) * test_frac)
+    # Randomly select clusters for the test set
     test_clusters = rng.choice(unique_clusters, size=test_cluster_count, replace=False)
     plot_gdf["split"] = plot_gdf["cluster"].apply(lambda c: "test" if c in test_clusters else "train")
 
@@ -87,19 +88,23 @@ def visualize_split(split_gdf):
 
 def main():
     pairs_df = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
+
+    # Convert plot_id to zero-padded strings
     pairs_df['plot_id'] = pairs_df['plot_id'].apply(lambda x: f"{int(x):04d}")
 
-    plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)[['plot_id', 'geometry']].drop_duplicates(subset='plot_id')
+    # Load ground reference plots, and select plot ID and geometry columns
+    plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)[['plot_id', 'geometry']]
     plots_gdf = gpd.GeoDataFrame(plots_gdf, geometry='geometry')
 
     # Run HDBSCAN spatial split
     split_plot_gdf = hdbscan_spatial_split(plots_gdf)
 
+    # Merge the results with the pairs DataFrame to filter out the 217 plots
     merged_df = pairs_df.merge(split_plot_gdf[['plot_id', 'split']], on='plot_id', how='left')
     print(f"Train plots: {len(merged_df[merged_df['split'] == 'train'])}, Test plots: {len(merged_df[merged_df['split'] == 'test'])}")
 
-    merged_df.to_csv(OUTPUT_PAIRED_SPLIT_FILE, index=False)
-    print(f"Saved to: {OUTPUT_PAIRED_SPLIT_FILE}")
+    merged_df.to_csv(TRAIN_TEST_SPLIT_FILE, index=False)
+    print(f"Saved to: {TRAIN_TEST_SPLIT_FILE}")
 
     visualize_split(split_plot_gdf)
 
