@@ -34,18 +34,18 @@ for sub in project_rt.iterdir():
             sys.path.insert(0, sub_str)
 
 
-# ----- Add alt Python interpreter dirs to path (e.g. Automate Metashape) -----
+# ----- Add alt Python script dirs to path (e.g. Automate Metashape) -----
 try:
     from configs.path_config import path_config
 except ImportError:
     raise FileNotFoundError("ERROR: Could not find path config to add interpreters to system path")
 
-# ADD OTHER INTERPRETES HERE AS NEEDED
-INTERPRETER_PATHS = [
+# ADD OTHER SCRIPT DIRECTORIES HERE AS NEEDED
+SCRIPTS_PATHS = [
     path_config.automate_metashape_path / "python",
 ]
 
-for interpreter_path in INTERPRETER_PATHS:
-    if interpreter_path.exists():
-        sys.path.insert(0, str(interpreter_path))
+for script_path in SCRIPTS_PATHS:
+    if script_path.exists():
+        sys.path.insert(0, str(script_path))
 

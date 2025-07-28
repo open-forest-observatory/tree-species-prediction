@@ -1,13 +1,5 @@
 from pathlib import Path
 
-'''from constants import (
-    AUTOMATE_METASHAPE_PATH,
-    DERIVED_METASHAPE_CONFIGS_FOLDER,
-    METASHAPE_PYTHON_PATH,
-    PHOTOGRAMMETRY_FOLDER,
-    RAW_IMAGE_SETS_FOLDER,
-)'''
-
 import _bootstrap
 from configs.path_config import path_config
 

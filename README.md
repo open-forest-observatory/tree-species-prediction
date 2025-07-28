@@ -7,6 +7,11 @@ These processing steps rely on functionality from several projects. Because they
 ## [Automate Metashape](https://github.com/open-forest-observatory/automate-metashape)
 This project is a wrapper around Agisoft Metashape that allows for reproducible end-to-end automated photogrammetry. The tag is `vx.x.x` and the conda environment should be called `meta`.
 
+# Setup
+Before any scripts can be ran, you must symlink the `_bootstrap.py` script into all working directories (i.e. folders with scripts that are ran directly, not called like other scripts such as those in `utils/` or `config/`). Fortunately the script `symlink_bootstrap.py` exists for that purpose. Simply run that script from the root directory of the project and it will take care of the rest.
+
+**Note for Contributors:** There is a list in this script called `WORKING_DIRS` that contains the relative paths of folders described above. If you add a new folder for scripts to be ran directly, please ensure you also add the relative path of the folder to this list. Similarly if additional outside scripts are needed (e.g. Automate-Metashape) the paths to these script dirs can be added to `_bootstrap.py` in a list towards the bottom called `SCRIPTS_PATHS`. 
+
 # Processing steps
 TODO, describe overview of processing steps
 
