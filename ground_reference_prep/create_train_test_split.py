@@ -67,7 +67,7 @@ def hdbscan_spatial_split(plot_gdf, min_cluster_size=MIN_CLUSTER_SIZE, min_sampl
     test_clusters = rng.choice(unique_clusters, size=test_cluster_count, replace=False)
     plot_gdf["split"] = plot_gdf["cluster"].apply(lambda c: "test" if c in test_clusters else "train")
 
-    return plot_gdf.drop(columns=["cluster"])
+    return plot_gdf
 
 def visualize_split(split_gdf):
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -100,7 +100,7 @@ def main():
     split_plot_gdf = hdbscan_spatial_split(plots_gdf)
 
     # Merge the results with the pairs DataFrame to filter out the 217 plots
-    merged_df = pairs_df.merge(split_plot_gdf[['plot_id', 'split']], on='plot_id', how='left')
+    merged_df = pairs_df.merge(split_plot_gdf[['plot_id', 'split', 'cluster']], on='plot_id', how='left')
     print(f"Train plots: {len(merged_df[merged_df['split'] == 'train'])}, Test plots: {len(merged_df[merged_df['split'] == 'test'])}")
 
     merged_df.to_csv(TRAIN_TEST_SPLIT_FILE, index=False)
