@@ -44,6 +44,7 @@ GROUND_REFERENCE_PLOTS_FILE = Path(GROUND_REFERENCE_FOLDER, "ofo_ground-referenc
 DRONE_MISSIONS_WITH_ALT_FILE = Path(PREPROCESSING_FOLDER, "ofo-all-missions-metadata-with-altitude.gpkg")
 
 GROUND_PLOT_DRONE_MISSION_MATCHES_FILE = Path(INTERMEDIATE_DATA_FOLDER , "ground_plot_drone_mission_matches.csv")
+TRAIN_TEST_SPLIT_FILE = Path(INTERMEDIATE_DATA_FOLDER, "train_test_split.csv")
 
 DRONE_IMAGES_ROOT = Path("/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted")
 CHM_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "CHMs")
