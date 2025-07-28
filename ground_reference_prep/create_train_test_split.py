@@ -26,7 +26,7 @@ def hdbscan_spatial_split(plot_gdf, min_cluster_size=MIN_CLUSTER_SIZE, min_sampl
     plot_gdf = plot_gdf.to_crs(32610)
 
     # Extract centroids of each plot geometry for clustering
-    coords = np.array([[geom.centroid.x, geom.centroid.y] for geom in plot_gdf.geometry])
+    coords = np.column_stack((plot_gdf.geometry.centroid.x, plot_gdf.geometry.centroid.y))
     clusterer = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples).fit(coords)
     plot_gdf["cluster"] = clusterer.labels_
 
@@ -38,12 +38,12 @@ def hdbscan_spatial_split(plot_gdf, min_cluster_size=MIN_CLUSTER_SIZE, min_sampl
     # For this, we compute the centroids of each cluster
     # and use a KDTree for efficient nearest neighbor search
     cluster_centroids = valid.groupby("cluster").geometry.apply(lambda g: g.unary_union.centroid)
-    cluster_centroids_coords = np.array([[pt.x, pt.y] for pt in cluster_centroids])
+    cluster_centroids_coords = np.column_stack((cluster_centroids.x, cluster_centroids.y))
     cluster_ids = cluster_centroids.index.to_numpy()
     tree = KDTree(cluster_centroids_coords)
 
     # Compute centroids of noise plot geometries
-    noise_centroids = np.array([[geom.centroid.x, geom.centroid.y] for geom in noise.geometry])
+    noise_centroids = np.column_stack((noise.geometry.centroid.x, noise.geometry.centroid.y))
     # Query the nearest cluster centroid for each noise point
     _, nearest_idx = tree.query(noise_centroids)
     # Assign the cluster ID of the nearest centroid to the noise points
