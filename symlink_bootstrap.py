@@ -6,7 +6,7 @@ from pathlib import Path
 # NOTE: do NOT need to add folders like `utils/` or `config/` since they are never directly called
 WORKING_DIRS = [
     "1_data_prep",
-    "x_training",
+    "2_training",
 ]
 
 BOOTSTRAP_NAME = "_bootstrap.py"
