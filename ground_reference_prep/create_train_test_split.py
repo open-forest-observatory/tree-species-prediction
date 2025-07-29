@@ -1,4 +1,5 @@
 import sys
+import argparse
 from pathlib import Path
 import geopandas as gpd
 import pandas as pd
@@ -14,6 +15,7 @@ from constants import (
     GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
     GROUND_REFERENCE_PLOTS_FILE,
     TRAIN_TEST_SPLIT_FILE,
+    HDBSCAN_CLUSTERED_PLOTS,
 )
 
 MIN_CLUSTER_SIZE = 3
@@ -58,10 +60,6 @@ def hdbscan_spatial_clusters(
     # Merge valid and noise plots back together
     plot_gdf = pd.concat([valid, noise], ignore_index=True)
 
-    # Compute convex hulls for all clusters. This is done only to help visualize the clusters later.
-    cluster_hulls = plot_gdf.groupby("cluster").geometry.apply(lambda x: x.unary_union.convex_hull)
-    plot_gdf["cluster_convex_hull"] = plot_gdf["cluster"].map(cluster_hulls)
-
     return plot_gdf
 
 def assign_train_test_clusters(
@@ -99,42 +97,63 @@ def visualize_split(split_gdf):
     plt.legend(handles=[train_patch, test_patch])
     ax.set_title("Train-Test split using HDBSCAN")
 
-    # Plot cluster convex hulls as filled polygons colored by split
-    hulls = split_gdf[(split_gdf["split"] != "noise")].drop_duplicates(subset=["cluster_convex_hull", "split"])
-    for _, row in hulls.iterrows():
-        color = "green" if row["split"] == "train" else "red"
-        gpd.GeoSeries([row["cluster_convex_hull"]]).plot(ax=ax, facecolor=color, edgecolor=color, alpha=0.2, linewidth=2)
+    # Compute convex hulls per cluster
+    cluster_hulls = split_gdf.groupby("cluster").geometry.apply(lambda x: x.unary_union.convex_hull)
+    for cluster_id, hull in cluster_hulls.items():
+        split = split_gdf[split_gdf["cluster"] == cluster_id]["split"].iloc[0]
+        color = "green" if split == "train" else "red"
+        gpd.GeoSeries([hull]).plot(ax=ax, facecolor=color, edgecolor=color, alpha=0.2, linewidth=2)
 
     plt.show()
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run HDBSCAN and/or train/test split.")
+    
+    parser.add_argument(
+        "--step", 
+        choices=["hdbscan", "split", "both"], 
+        default="both",
+        help="Which step to run: hdbscan, split, or both"
+    )
+    
+    parser.add_argument(
+        "--input",
+        type=str,
+        help="Path to gpkg file with cluster IDs. This is basically the output of hdbscan_spatial_clusters. It's needed if you only want to run the train/test split step."
+    )
+    
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
+    
     pairs_df = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
-
-    # Load ground reference plots, and select plot ID and geometry columns
-    plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)[['plot_id', 'geometry']]
-
-    # Convert plot_id to zero-padded strings
     pairs_df['plot_id'] = pairs_df['plot_id'].apply(lambda x: f"{int(x):04d}")
 
-    # Filter plots_gdf to just the plots in the 217 matches
-    # This ensures we only work with plots that have drone missions
-    plots_gdf = plots_gdf[plots_gdf['plot_id'].isin(pairs_df['plot_id'])].copy()
+    if args.step in ["hdbscan", "both"]:
+        plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)[['plot_id', 'geometry']]
+        plots_gdf = plots_gdf[plots_gdf['plot_id'].isin(pairs_df['plot_id'])].copy()
+        clustered_gdf = hdbscan_spatial_clusters(plots_gdf)
+        clustered_gdf.to_file(HDBSCAN_CLUSTERED_PLOTS)
+        print(f"Saved clustered output to {HDBSCAN_CLUSTERED_PLOTS}")
 
-    # Run spatial HDBSCAN split
-    clustered_gdf = hdbscan_spatial_clusters(plots_gdf)
-    split_gdf = assign_train_test_clusters(clustered_gdf)
+    if args.step in ["split", "both"]:
+        if args.step == "split":
+            if args.input is None:
+                print("Error: input file with clustered plots is required for the split step.")
+                sys.exit(1)
+            else:
+                clustered_gdf = gpd.read_file(args.input)
 
-    # Merge to include train/test split and cluster ID info in the final results
-    pairs_df = pairs_df.merge(split_gdf[['plot_id', 'split', 'cluster']], on='plot_id', how='left')
-    train_plots = pairs_df[pairs_df['split'] == 'train']['plot_id'].unique()
-    test_plots = pairs_df[pairs_df['split'] == 'test']['plot_id'].unique()
-    print(f"Train plots: {len(train_plots)}, Test plots: {len(test_plots)}")
+        split_gdf = assign_train_test_clusters(clustered_gdf)
+        pairs_df = pairs_df.merge(split_gdf[['plot_id', 'split', 'cluster']], on='plot_id', how='left')
+        train_plots = pairs_df[pairs_df['split'] == 'train']['plot_id'].unique()
+        test_plots = pairs_df[pairs_df['split'] == 'test']['plot_id'].unique()
+        print(f"Train plots: {len(train_plots)}, Test plots: {len(test_plots)}")
+        pairs_df.to_csv(TRAIN_TEST_SPLIT_FILE, index=False)
+        print(f"Saved train/test split to {TRAIN_TEST_SPLIT_FILE}")
 
-    pairs_df.to_csv(TRAIN_TEST_SPLIT_FILE, index=False)
-    print(f"Saved to: {TRAIN_TEST_SPLIT_FILE}")
-
-    # Visualize the plots and their train/test split, along with cluster convex hulls
-    visualize_split(split_gdf)
+        visualize_split(split_gdf)
 
 if __name__ == "__main__":
     main()
