@@ -45,6 +45,8 @@ ALL_MISSIONS_METADATA_FILE = Path("ofo-share/catalog-data-prep/01_raw-imagery-in
 DRONE_MISSIONS_WITH_ALT_FILE = Path(PREPROCESSING_FOLDER, "ofo-all-missions-metadata-with-altitude.gpkg")
 
 GROUND_PLOT_DRONE_MISSION_MATCHES_FILE = Path(INTERMEDIATE_DATA_FOLDER , "ground_plot_drone_mission_matches.csv")
+HDBSCAN_CLUSTERED_PLOTS = Path(INTERMEDIATE_DATA_FOLDER, "hdbscan_clustered_plots.gpkg")
+TRAIN_TEST_SPLIT_FILE = Path(INTERMEDIATE_DATA_FOLDER, "train_test_split.csv")
 
 DRONE_IMAGES_ROOT = Path("/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted")
 CHM_FOLDER = Path(INTERMEDIATE_DATA_FOLDER, "CHMs")
