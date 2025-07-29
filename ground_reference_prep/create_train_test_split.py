@@ -17,17 +17,25 @@ from constants import (
 )
 
 MIN_CLUSTER_SIZE = 3
+MAX_CLUSTER_SIZE = 10
 MIN_SAMPLES = 3
 TEST_FRACTION = 0.2
 SEED = 35
 
-def hdbscan_spatial_split(plot_gdf, min_cluster_size=MIN_CLUSTER_SIZE, min_samples=MIN_SAMPLES, test_frac=TEST_FRACTION, seed=SEED):
+def hdbscan_spatial_split(
+        plot_gdf, 
+        min_cluster_size=MIN_CLUSTER_SIZE, 
+        max_cluster_size=MAX_CLUSTER_SIZE, 
+        min_samples=MIN_SAMPLES, 
+        test_frac=TEST_FRACTION, 
+        seed=SEED
+    ):
     # Convert to meters based CRS
     plot_gdf = plot_gdf.to_crs(32610)
 
     # Extract centroids of each plot geometry for clustering
     coords = np.column_stack((plot_gdf.geometry.centroid.x, plot_gdf.geometry.centroid.y))
-    clusterer = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples).fit(coords)
+    clusterer = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples, max_cluster_size=max_cluster_size).fit(coords)
     plot_gdf["cluster"] = clusterer.labels_
 
     # Separate out the valid clustered points and noise (labeled as -1)
@@ -57,15 +65,27 @@ def hdbscan_spatial_split(plot_gdf, min_cluster_size=MIN_CLUSTER_SIZE, min_sampl
     cluster_hulls = plot_gdf.groupby("cluster").geometry.apply(lambda x: x.unary_union.convex_hull)
     plot_gdf["cluster_convex_hull"] = plot_gdf["cluster"].map(cluster_hulls)
 
-    rng = np.random.default_rng(seed)
-    unique_clusters = plot_gdf["cluster"].unique()
-    print(f"Number of clusters (including reassigned noise): {len(unique_clusters)}")
+    # Computer number of plots per cluster
+    cluster_sizes = plot_gdf.groupby("cluster").size().reset_index(name="count")
+    # frac specifies the fraction of rows to return, 1 means all rows but shuffled
+    cluster_sizes = cluster_sizes.sample(frac=1, random_state=seed)
 
-    # Calculate number of clusters to assign to test set, using the specified fraction
-    test_cluster_count = int(len(unique_clusters) * test_frac)
-    # Randomly select clusters for the test set
-    test_clusters = rng.choice(unique_clusters, size=test_cluster_count, replace=False)
+    # Accumulate clusters for the test set until we approximately reach the desired fraction
+    test_clusters = []
+    cumulative_plots = 0
+    total_plots = len(plot_gdf)
+    for _, row in cluster_sizes.iterrows():
+        cluster_id = row["cluster"]
+        count = row["count"]
+        if cumulative_plots / total_plots >= test_frac:
+            break
+        test_clusters.append(cluster_id)
+        cumulative_plots += count
+
+    # Assign train/test labels
     plot_gdf["split"] = plot_gdf["cluster"].apply(lambda c: "test" if c in test_clusters else "train")
+
+    print(f"Number of clusters (including reassigned noise): {plot_gdf['cluster'].nunique()}")
 
     return plot_gdf
 
@@ -89,23 +109,29 @@ def visualize_split(split_gdf):
 def main():
     pairs_df = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
 
+    # Load ground reference plots, and select plot ID and geometry columns
+    plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)[['plot_id', 'geometry']]
+
     # Convert plot_id to zero-padded strings
     pairs_df['plot_id'] = pairs_df['plot_id'].apply(lambda x: f"{int(x):04d}")
 
-    # Load ground reference plots, and select plot ID and geometry columns
-    plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)[['plot_id', 'geometry']]
-    plots_gdf = gpd.GeoDataFrame(plots_gdf, geometry='geometry')
+    # Filter plots_gdf to just the plots in the 217 matches
+    # This ensures we only work with plots that have drone missions
+    plots_gdf = plots_gdf[plots_gdf['plot_id'].isin(pairs_df['plot_id'])].copy()
 
-    # Run HDBSCAN spatial split
+    # Run spatial HDBSCAN split
     split_plot_gdf = hdbscan_spatial_split(plots_gdf)
 
-    # Merge the results with the pairs DataFrame to filter out the 217 plots
-    merged_df = pairs_df.merge(split_plot_gdf[['plot_id', 'split', 'cluster']], on='plot_id', how='left')
-    print(f"Train plots: {len(merged_df[merged_df['split'] == 'train'])}, Test plots: {len(merged_df[merged_df['split'] == 'test'])}")
+    # Merge to include train/test split and cluster ID info in the final results
+    pairs_df = pairs_df.merge(split_plot_gdf[['plot_id', 'split', 'cluster']], on='plot_id', how='left')
+    train_plots = pairs_df[pairs_df['split'] == 'train']['plot_id'].unique()
+    test_plots = pairs_df[pairs_df['split'] == 'test']['plot_id'].unique()
+    print(f"Train plots: {len(train_plots)}, Test plots: {len(test_plots)}")
 
-    merged_df.to_csv(TRAIN_TEST_SPLIT_FILE, index=False)
+    pairs_df.to_csv(TRAIN_TEST_SPLIT_FILE, index=False)
     print(f"Saved to: {TRAIN_TEST_SPLIT_FILE}")
 
+    # Visualize the plots and their train/test split, along with cluster convex hulls
     visualize_split(split_plot_gdf)
 
 if __name__ == "__main__":
