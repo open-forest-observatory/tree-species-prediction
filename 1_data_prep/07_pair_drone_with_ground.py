@@ -5,11 +5,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (DRONE_MISSIONS_WITH_ALT_FILE,
-                       GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
-                       GROUND_REFERENCE_PLOTS_FILE)
+import _bootstrap
+from configs.path_config import path_config
 
 
 def classify_mission(row):
@@ -244,9 +241,9 @@ def match_ground_plots_with_drone_missions(
 
 if __name__ == "__main__":
     # Read file with all drone missions metadata, including computed altitude values
-    drone_missions_gdf = gpd.read_file(DRONE_MISSIONS_WITH_ALT_FILE)
+    drone_missions_gdf = gpd.read_file(path_config.drone_missions_with_alt_file)
     # Read ground reference plots
-    ground_ref_plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)
+    ground_ref_plots_gdf = gpd.read_file(path_config.ground_reference_plots_file)
 
     paired_drone_missions_gdf = pair_drone_missions(drone_missions_gdf)
     ground_plot_drone_missions_matches = match_ground_plots_with_drone_missions(
@@ -254,4 +251,4 @@ if __name__ == "__main__":
     )
 
     # Save to file
-    ground_plot_drone_missions_matches.to_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
+    ground_plot_drone_missions_matches.to_csv(path_config.ground_plot_drone_mission_matches_file)

@@ -14,8 +14,8 @@ from tree_detection_framework.postprocessing.postprocessing import (
 )
 
 # Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import CHM_FOLDER, TREE_DETECTIONS_FOLDER
+import _bootstrap
+from configs.path_config import path_config
 
 CHIP_SIZE = 1000
 CHIP_STRIDE = 250
@@ -92,11 +92,11 @@ def detect_trees(
 
 if __name__ == "__main__":
     # List all the CHM files
-    CHM_files = sorted(CHM_FOLDER.glob("*.tif"))
+    CHM_files = sorted(path_config.chm_folder.glob("*.tif"))
 
     for CHM_file in CHM_files:
         print(f"Detecting trees for {CHM_file}")
         # Since both the tree tops and tree crowns are saved out, we provide an output folder
-        output_folder = Path(TREE_DETECTIONS_FOLDER, CHM_file.stem)
+        output_folder = Path(path_config.tree_detections_folder, CHM_file.stem)
         # Run tree detection
         detect_trees(CHM_file=CHM_file, save_folder=output_folder)
