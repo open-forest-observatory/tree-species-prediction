@@ -4,7 +4,7 @@ import gc
 import time
 from itertools import product
 
-from models.model import TreeModel
+from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
 from training_utils.omp import omp_select
 from training_utils.gather_gradients import gather_discriminator_gradients
 from training_utils.train_epoch import train_epoch

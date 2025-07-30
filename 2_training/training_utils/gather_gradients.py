@@ -2,7 +2,7 @@ import torch
 from tqdm import tqdm
 import gc
 import math
-from models.model import TreeModel
+from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
 
 # Function to chunk a list into pieces of size chunk_size
 def chunk_list(lst, chunk_size):
@@ -14,7 +14,7 @@ def gather_discriminator_gradients(
     dataset, 
     device,
     subbatch_size,
-    batch_size=90000
+    batch_size
 ):
     """
     3 deep for loops looks bad I know, but I swear it's still just O(n),

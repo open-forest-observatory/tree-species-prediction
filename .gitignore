@@ -4,6 +4,10 @@
 # ...but still track the one at the project root
 !/_bootstrap.py
 
+# pretrained models folder
+/2_training/models/pretrained/*
+!/2_training/models/pretrained/PLACE_PRETRAINED_MODELS_HERE
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
