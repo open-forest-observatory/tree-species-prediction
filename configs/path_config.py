@@ -65,6 +65,9 @@ class PathConfig:
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )
 
+    hdbscan_clustered_plots = Path(intermediate_data_folder, "hdbscan_clustered_plots.gpkg")
+    train_test_split_file = Path(intermediate_data_folder, "train_test_split.csv")
+    
     drone_images_root: Path = Path(
         "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
     )
