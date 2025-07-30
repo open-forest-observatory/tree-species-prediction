@@ -10,11 +10,8 @@ import pandas as pd
 from scipy.spatial import KDTree
 from sklearn.cluster import HDBSCAN
 
-# Add folder where constants.py is to system search path
-sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (GROUND_PLOT_DRONE_MISSION_MATCHES_FILE,
-                       GROUND_REFERENCE_PLOTS_FILE, HDBSCAN_CLUSTERED_PLOTS,
-                       TRAIN_TEST_SPLIT_FILE)
+import _bootstrap
+from configs.path_config import path_config
 
 MIN_CLUSTER_SIZE = 3
 MAX_CLUSTER_SIZE = 10
@@ -149,15 +146,15 @@ def parse_args():
 def main():
     args = parse_args()
 
-    pairs_df = pd.read_csv(GROUND_PLOT_DRONE_MISSION_MATCHES_FILE)
+    pairs_df = pd.read_csv(path_config.ground_plot_drone_mission_matches_file)
     pairs_df["plot_id"] = pairs_df["plot_id"].apply(lambda x: f"{int(x):04d}")
 
     if args.step in ["hdbscan", "both"]:
-        plots_gdf = gpd.read_file(GROUND_REFERENCE_PLOTS_FILE)[["plot_id", "geometry"]]
+        plots_gdf = gpd.read_file(path_config.ground_reference_plots_file)[["plot_id", "geometry"]]
         plots_gdf = plots_gdf[plots_gdf["plot_id"].isin(pairs_df["plot_id"])].copy()
         clustered_gdf = hdbscan_spatial_clusters(plots_gdf)
-        clustered_gdf.to_file(HDBSCAN_CLUSTERED_PLOTS)
-        print(f"Saved clustered output to {HDBSCAN_CLUSTERED_PLOTS}")
+        clustered_gdf.to_file(path_config.hdbscan_clustered_plots)
+        print(f"Saved clustered output to {path_config.hdbscan_clustered_plots}")
 
     if args.step in ["split", "both"]:
         if args.step == "split":
@@ -176,8 +173,8 @@ def main():
         train_plots = pairs_df[pairs_df["split"] == "train"]["plot_id"].unique()
         test_plots = pairs_df[pairs_df["split"] == "test"]["plot_id"].unique()
         print(f"Train plots: {len(train_plots)}, Test plots: {len(test_plots)}")
-        pairs_df.to_csv(TRAIN_TEST_SPLIT_FILE, index=False)
-        print(f"Saved train/test split to {TRAIN_TEST_SPLIT_FILE}")
+        pairs_df.to_csv(path_config.train_test_split_file, index=False)
+        print(f"Saved train/test split to {path_config.train_test_split_file}")
 
         visualize_split(split_gdf)
 
