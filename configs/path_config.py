@@ -88,6 +88,7 @@ class PathConfig:
         intermediate_data_folder, "species_class_crosswalk.csv"
     )
 
+
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
         hints = get_type_hints(self.__class__) # get types of class attributes
