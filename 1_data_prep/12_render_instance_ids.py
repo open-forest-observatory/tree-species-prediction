@@ -18,7 +18,7 @@ RENDER_IMAGE_SCALE = 0.1
 # Portions of the mesh within this distance of the labels are used for rendering
 MESH_BUFFER_RADIUS_METER = 20
 # Cameras within this radius of the annotations are used for training
-CAMERAS_BUFFER_RADIUS_METERS = 10
+CAMERAS_BUFFER_RADIUS_METERS = 25
 # Downsample target
 DOWNSAMPLE_TARGET = 1
 
