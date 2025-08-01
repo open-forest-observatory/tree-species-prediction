@@ -48,13 +48,13 @@ class PathConfig:
         intermediate_data_folder, "metashape_configs"
     )
     
-    # Inputs for first preprocessing step 1_get_mission_altitude.py
+    # Inputs for first preprocessing step 01_get_mission_altitude.py
     mission_altitudes_folder: Path = Path(preprocessing_folder, "mission_altitudes")
     missions_outside_dtm_list: Path = Path(
         preprocessing_folder, "list_of_missions_outside_dtm.txt"
     )
 
-    # Inputs for 4_pair_drone_with_ground.py
+    # Inputs for 07_pair_drone_with_ground.py
     drone_missions_with_alt_file: Path = Path(
         preprocessing_folder, "ofo-all-missions-metadata-with-altitude.gpkg"
     )
@@ -83,10 +83,13 @@ class PathConfig:
         intermediate_data_folder, "drone_crowns_with_field_attributes"
     )
 
-    # Output of 6_determine_species_classes.py
+    # Output of 10_determine_species_classes.py
     species_class_crosswalk_file: Path = Path(
         intermediate_data_folder, "species_class_crosswalk.csv"
     )
+
+    # Output of 12_render_instance_ids.py
+    rendered_instance_ids: Path = Path(intermediate_data_folder, "rendered_instance_ids")
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
