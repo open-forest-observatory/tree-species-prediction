@@ -10,8 +10,6 @@ from geograypher.entrypoints.render_labels import render_labels
 from geograypher.meshes import TexturedPhotogrammetryMesh
 from geograypher.utils.visualization import show_segmentation_labels
 
-# Ensure project root is on sys.path so _bootstrap can be found
-sys.path.append(str(Path(__file__).resolve().parent.parent))
 import _bootstrap
 from configs.path_config import path_config
 
