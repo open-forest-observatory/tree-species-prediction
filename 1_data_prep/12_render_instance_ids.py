@@ -30,14 +30,16 @@ INPUT_CRS = "EPSG:26910"
 LABEL_COLUMN_NAME = "unique_ID"
 VIS = True
 
+RENDER_ROOT_FOLDER = path_config.rendered_instance_ids / "renders"
+VIS_ROOT_FOLDER = path_config.rendered_instance_ids / "visualizations"
 
 if __name__ == "__main__":
     photogrammetry_folders = path_config.photogrammetry_folder.glob("*")
 
-
     for photogrammetry_folder in photogrammetry_folders:
         dataset = photogrammetry_folder.parts[-1]
 
+        # INPUTS
         # The input labels
         labels_file = Path(path_config.drone_crowns_with_field_attributes, f"{dataset}.gpkg")
         # The mesh exported from Metashape
@@ -53,8 +55,11 @@ if __name__ == "__main__":
         # The image folder used to create the Metashape project
         image_folder = Path(path_config.raw_image_sets_folder, dataset)
 
+        # OUTPUTS
         # Where to save the renders
-        render_folder = Path(path_config.rendered_instance_ids, dataset)
+        render_output_folder = RENDER_ROOT_FOLDER / dataset
+        # Where to save the visualizations
+        vis_output_folder = VIS_ROOT_FOLDER / dataset
 
         if not labels_file.exists():
             print(f"Skipping {dataset} - vector file not found at {labels_file}")
@@ -69,19 +74,19 @@ if __name__ == "__main__":
                 image_folder=image_folder,
                 texture=gdf,
                 texture_column_name=LABEL_COLUMN_NAME,
-                render_savefolder=render_folder,
+                render_savefolder=render_output_folder,
                 DTM_file=dtm_file,
                 ground_height_threshold=2,
                 cameras_ROI_buffer_radius_meters=20,
                 mesh_ROI_buffer_radius_meters=20,
-                cast_to_uint8=False, # Save the rendered IDs as TIF files to support ID values > 255
+                cast_to_uint8=False,  # Save the rendered IDs as TIF files to support ID values > 255
             )
 
             if VIS:
                 show_segmentation_labels(
-                    label_folder=render_folder,
+                    label_folder=render_output_folder,
                     image_folder=image_folder,
-                    savefolder=str(render_folder) + "_vis",
+                    savefolder=vis_output_folder,
                     num_show=10,
                     label_suffix=".tif",
                 )
