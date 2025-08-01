@@ -22,6 +22,7 @@ CAMERAS_BUFFER_RADIUS_METERS = 10
 # Downsample target
 DOWNSAMPLE_TARGET = 1
 
+# CRS inferred from automate-metashape config that generated the product, metadata.xml, or sibling rasters
 INPUT_CRS = "EPSG:26910"
 
 # Render data from this column in the geofile to each image
@@ -38,38 +39,38 @@ if __name__ == "__main__":
         dataset = photogrammetry_folder.parts[-1]
 
         # The input labels
-        LABELS_FILENAME = Path(path_config.drone_crowns_with_field_attributes, f"{dataset}.gpkg")
+        labels_file = Path(path_config.drone_crowns_with_field_attributes, f"{dataset}.gpkg")
         # The mesh exported from Metashape
-        MESH_FILENAME = Path(
+        mesh_file = Path(
             path_config.photogrammetry_folder, dataset, "outputs", f"{dataset}_model.ply"
         )
-        CAMERAS_FILENAME = Path(
+        cameras_file = Path(
             path_config.photogrammetry_folder, dataset, "outputs", f"{dataset}_cameras.xml"
         )
-        DTM_FILE = Path(
+        dtm_file = Path(
             path_config.photogrammetry_folder, dataset, "outputs", f"{dataset}_dtm-ptcloud.tif"
         )
         # The image folder used to create the Metashape project
-        IMAGE_FOLDER = Path(path_config.raw_image_sets_folder, dataset)
+        image_folder = Path(path_config.raw_image_sets_folder, dataset)
 
         # Where to save the renders
-        RENDER_FOLDER = Path(path_config.rendered_instance_ids, dataset)
+        render_folder = Path(path_config.rendered_instance_ids, dataset)
 
-        if not LABELS_FILENAME.exists():
-            print(f"Skipping {dataset} - vector file not found at {LABELS_FILENAME}")
+        if not labels_file.exists():
+            print(f"Skipping {dataset} - vector file not found at {labels_file}")
             continue
 
-        gdf = gpd.read_file(LABELS_FILENAME)
+        gdf = gpd.read_file(labels_file)
         try:
             render_labels(
-                mesh_file=MESH_FILENAME,
-                cameras_file=CAMERAS_FILENAME,
+                mesh_file=mesh_file,
+                cameras_file=cameras_file,
                 input_CRS=INPUT_CRS,
-                image_folder=IMAGE_FOLDER,
+                image_folder=image_folder,
                 texture=gdf,
                 texture_column_name=LABEL_COLUMN_NAME,
-                render_savefolder=RENDER_FOLDER,
-                DTM_file=DTM_FILE,
+                render_savefolder=render_folder,
+                DTM_file=dtm_file,
                 ground_height_threshold=2,
                 cameras_ROI_buffer_radius_meters=20,
                 mesh_ROI_buffer_radius_meters=20,
@@ -78,9 +79,9 @@ if __name__ == "__main__":
 
             if VIS:
                 show_segmentation_labels(
-                    label_folder=RENDER_FOLDER,
-                    image_folder=IMAGE_FOLDER,
-                    savefolder=str(RENDER_FOLDER) + "_vis",
+                    label_folder=render_folder,
+                    image_folder=image_folder,
+                    savefolder=str(render_folder) + "_vis",
                     num_show=10,
                     label_suffix=".tif",
                 )
