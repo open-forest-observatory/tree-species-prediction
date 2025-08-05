@@ -89,7 +89,8 @@ class PathConfig:
     )
 
     # Output of 12_render_instance_ids.py
-    rendered_instance_ids: Path = Path(intermediate_data_folder, "rendered_instance_ids")
+    rendered_instance_ids: Path = Path(intermediate_data_folder, "rendered_instance_ids/renders")
+    rendered_instance_ids_vis: Path = Path(intermediate_data_folder, "rendered_instance_ids/visualizations")
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
