@@ -18,9 +18,11 @@ RENDER_IMAGE_SCALE = 0.1
 # Portions of the mesh within this distance of the labels are used for rendering
 MESH_BUFFER_RADIUS_METER = 20
 # Cameras within this radius of the annotations are used for training
-CAMERAS_BUFFER_RADIUS_METERS = 25
+CAMERAS_BUFFER_RADIUS_METERS = 20
 # Downsample target
 DOWNSAMPLE_TARGET = 1
+# Set points under this height to ground
+GROUND_HEIGHT_THRESHOLD = 2
 
 # CRS inferred from automate-metashape config that generated the product, metadata.xml, or sibling rasters
 INPUT_CRS = "EPSG:26910"
@@ -57,28 +59,29 @@ if __name__ == "__main__":
 
         # OUTPUTS
         # Where to save the renders
-        render_output_folder = RENDER_ROOT_FOLDER / dataset
+        render_output_folder = path_config.rendered_instance_ids / dataset
         # Where to save the visualizations
-        vis_output_folder = VIS_ROOT_FOLDER / dataset
+        vis_output_folder = path_config.rendered_instance_ids_vis / dataset
 
         if not labels_file.exists():
             print(f"Skipping {dataset} - vector file not found at {labels_file}")
             continue
 
-        gdf = gpd.read_file(labels_file)
         try:
             render_labels(
                 mesh_file=mesh_file,
                 cameras_file=cameras_file,
                 input_CRS=INPUT_CRS,
                 image_folder=image_folder,
-                texture=gdf,
+                texture=labels_file,
                 texture_column_name=LABEL_COLUMN_NAME,
                 render_savefolder=render_output_folder,
                 DTM_file=dtm_file,
-                ground_height_threshold=2,
-                cameras_ROI_buffer_radius_meters=20,
-                mesh_ROI_buffer_radius_meters=20,
+                ground_height_threshold=GROUND_HEIGHT_THRESHOLD,
+                cameras_ROI_buffer_radius_meters=CAMERAS_BUFFER_RADIUS_METERS,
+                mesh_ROI_buffer_radius_meters=MESH_BUFFER_RADIUS_METER,
+                render_image_scale=RENDER_IMAGE_SCALE,
+                mesh_downsample=DOWNSAMPLE_TARGET,
                 cast_to_uint8=False,  # Save the rendered IDs as TIF files to support ID values > 255
             )
 
