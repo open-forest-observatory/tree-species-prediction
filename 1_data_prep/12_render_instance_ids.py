@@ -32,9 +32,6 @@ INPUT_CRS = "EPSG:26910"
 LABEL_COLUMN_NAME = "unique_ID"
 VIS = True
 
-RENDER_ROOT_FOLDER = path_config.rendered_instance_ids / "renders"
-VIS_ROOT_FOLDER = path_config.rendered_instance_ids / "visualizations"
-
 if __name__ == "__main__":
     photogrammetry_folders = path_config.photogrammetry_folder.glob("*")
 
