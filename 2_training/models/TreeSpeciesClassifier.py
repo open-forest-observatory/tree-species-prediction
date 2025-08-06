@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import timm
 
-class TreeSpeciesClassifierFromPretrained:
-    def __init__(self,
+class TreeSpeciesClassifierFromPretrained(nn.module):
+    def __init__(
+        self,
         backbone_name: str,
         num_classes: int,
         use_metadata: bool = False,
@@ -15,3 +16,13 @@ class TreeSpeciesClassifierFromPretrained:
         super().__init__()
 
         
+
+class TreeMetaDataMLP(nn.module):
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dims: list[int],
+        embed_dim: int,
+        dropout: float = 0.0
+    ):
+        super().__init__()

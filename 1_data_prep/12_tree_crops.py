@@ -11,16 +11,6 @@ import itertools
 import _bootstrap
 from configs.path_config import path_config
 
-
-'''TODO
-only save out cropped trees with species_id
-change treetop_id to unique_id
-don't need to worry about grouping trees between drone missions
-rerun ensure cropped images aren't overwriting
-switch to tiff instead of npy
-radial cropping based on min(im_w, im_h) / 2
-'''
-
 # pad bbox of cropped images
 # actual padding is this ratio times the edge len
 BBOX_PADDING_RATIO = 0.02           
