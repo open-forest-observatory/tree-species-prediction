@@ -88,6 +88,12 @@ class PathConfig:
         intermediate_data_folder, "species_class_crosswalk.csv"
     )
 
+    # rendered instance IDs (.tif) files (masks of tree ids corresponding to raw images)
+    rendered_instance_ids_path = Path("/ofo-share/species-prediction-project/intermediate/rendered_instance_ids/renders")
+
+    # output of 12_tree_crops.py
+    # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
+    cropped_tree_training_images = Path("/ofo-share/species-prediction-project/intermediate/cropped_trees")
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
