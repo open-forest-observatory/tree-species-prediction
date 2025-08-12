@@ -95,6 +95,13 @@ class PathConfig:
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
     cropped_tree_training_images = intermediate_data_folder / 'cropped_trees'
 
+    # plant clef 2024 pretrained model as a base
+    pretrained_model_path = intermediate_data_folder / 'pretrained_models' / 'model_best_vit_base_patch14_reg4_dinov2_lvd142m_pc24_onlyclassifier_then_all.pth.tar'
+
+    # output of model trainings
+    # temporarily relative path until testing complete
+    training_ckpt_dir = Path("2_training/ckpts")
+
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
         hints = get_type_hints(self.__class__) # get types of class attributes

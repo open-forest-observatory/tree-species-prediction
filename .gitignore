@@ -13,6 +13,9 @@
 #... but leave the folder committed
 !/2_training/data/.gitkeep
 
+# training ckpt saving dir
+/2_training/ckpts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

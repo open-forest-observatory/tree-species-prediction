@@ -1,23 +1,95 @@
 import torch
 import torch.nn as nn
+from torchvision import transforms as T
 import timm
+from pathlib import Path
 
-class TreeSpeciesClassifierFromPretrained(nn.module):
+class TreeSpeciesClassifierFromPretrained(nn.Module):
+    """
+    Re-uses the PlantCLEF ViT-DINOv2 backbone, drops its 7,806-way classifier head,
+    and attaches a fresh classifier head for tree species set.
+
+    Parameters:
+
+    checkpoint_path : str | Path
+        Path to PlantCLEF checkpoint
+    num_classes     : int
+        Number of species in dataset
+    backbone_name   : str
+        timm model name that matches the checkpoint
+    drop_rate       : float, default 0.1
+        Dropout before the new classification layer
+    freeze_backbone : bool, default False
+        If True, backbone weights are frozen (only the new head trains).
+    """
     def __init__(
         self,
-        backbone_name: str,
+        ckpt_path: Path | str,   # path to pretrained classifier ckpt
+        backbone_name: str,     # what *kind* of model our pretrained ckpt is (see timm docs for supported models)
         num_classes: int,
-        use_metadata: bool = False,
-        meta_input_dim: int = 2,           # e.g. sinθ, cosθ
-        meta_hidden_dims: list[int] = (32, 32),
-        meta_embed_dim: int = 64,
-        dropout: float = 0.1,
+        backbone_is_trainable: bool,  # false -> only train our new classifier head; False -> tune pretrained weights and class head
+        drop_rate: float = 0.1,
     ):
         super().__init__()
 
-        
+        # init the base ViT architecture that was used for pretrained model
+        self.backbone = timm.create_model(
+            backbone_name,
+            pretrained=False,   # load weights manually
+            num_classes=0,      # removes original classifier head (so we attach ours)
+            global_pool='avg'   # output a flat feature vector from this base model
+        )
 
-class TreeMetaDataMLP(nn.module):
+        self.backbone_data_cfg = timm.data.resolve_model_data_config(self.backbone)
+        
+        # load weights from pretrained
+        # stay on cpu for now to avoid fragmentation and allow for easier modifications in init
+        ckpt_path = Path(ckpt_path)
+        state_dict = torch.load(ckpt_path, map_location='cpu')['state_dict']
+
+        # strict=False here allows for us to init the weights without the original classification head
+        self.backbone.load_state_dict(state_dict, strict=False) 
+
+        # un/freeze backbone
+        self.toggle_backbone_weights_trainability(backbone_is_trainable)
+
+        # append a new classification head
+        layers = []
+        if drop_rate > 0:
+            layers.append(nn.Dropout(p=drop_rate))
+        layers.append(nn.Linear(self.backbone.num_features, num_classes))
+        self.classifier_head = nn.Sequential(*layers)
+
+        # transforms similar to DINOv2 pre normalization
+        backbone_cfg = timm.data.resolve_model_data_config(self.backbone.pretrained_cfg)
+        size = backbone_cfg["input_size"][1:]    # (224, 224) patches for ViT-B/14
+        self.train_transform = T.Compose([
+            T.RandomResizedCrop(size, scale=(0.85, 1.0)),
+            T.RandomHorizontalFlip(),
+            T.ToTensor(),
+            T.Normalize(mean=backbone_cfg["mean"], std=backbone_cfg["std"]),
+        ])
+
+        self.eval_transform = T.Compose([
+            T.Resize(size),
+            T.CenterCrop(size),
+            T.ToTensor(),
+            T.Normalize(mean=backbone_cfg["mean"], std=backbone_cfg["std"]),
+        ])
+
+    def toggle_backbone_weights_trainability(self, backbone_is_trainable):
+        for p in self.backbone.parameters():
+            p.requires_grad = backbone_is_trainable
+
+    def forward(self, x):
+        feature_tensor = self.backbone(x) # (B, back_bone_feature_dim)
+        return self.classifier_head(feature_tensor) # (B, num_classes)
+
+class TreeMetaDataMLP(nn.Module):
+    '''
+    placeholder to later include some metadata about the tree with the img itself for classifying
+    this can include drone height, tree angle relative to camera, nadir/oblique etc.
+    '''
     def __init__(
         self,
         input_dim: int,
