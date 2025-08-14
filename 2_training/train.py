@@ -35,33 +35,37 @@ def train():
 
     # init everything required for model training
     tree_model, tree_dset, train_loader, val_loader, optim, criterion, scheduler, scaler, device = init_training()
-    
+
+    # count n_samples per class
+    labels = torch.tensor([m['label_idx'] for m in tree_dset.meta])
+    unique, counts = torch.unique(labels, return_counts=True)
+    for idx, count in zip(unique.tolist(), counts.tolist()):
+        print(tree_dset.idx2label_map[idx], count)
+
     # sanity check test (comment out for actual training)
-    imgs, labels, metas = next(iter(train_loader))
-    print(imgs.shape, labels.shape, type(metas), len(metas))
+    #imgs, labels, metas = next(iter(train_loader))
+    #print(imgs.shape, labels.shape, type(metas), len(metas))
+    print(len(train_loader), len(val_loader))
 
     pbar = tqdm(range(model_config.epochs))
     for epoch in pbar:
         # toggle backbone trainability and add its params to optimizer once `freeze_backbone_epochs` reached
         if epoch == model_config.freeze_backbone_epochs:
             tree_model.toggle_backbone_weights_trainability(True)
-            backbone_trainable_params = [p for p in tree_model.backbone.parameters() if p.required_grad]
-            optim.add_param_group({"backbone_params": backbone_trainable_params})
-
+            print("*** Backbone weights tunable")
+            
         # train one step
         train_metrics = _step_epoch(
-            tree_model, train_loader, device,
-            optim, criterion, scaler,
-            training=True
+            tree_model, train_loader, device, criterion,
+            optim, scaler, training=True
         )
         scheduler.step()
 
         # validation -> use same train epoch fn but with training=False
         with torch.no_grad():
             val_metrics = _step_epoch(
-                tree_model, val_loader, device,
-                optim=None, criterion=None, scaler=None,
-                training=False
+                tree_model, val_loader, device, criterion,
+                optim=None, scaler=None, training=False
             )
 
         # save ckpt for future analysis

@@ -75,7 +75,8 @@ def init_training():
     val_cp = copy.copy(tree_dset)
     val_cp.transform = val_transform
 
-    train_dset_idxs, val_dset_idxs = stratified_split(tree_dset) # train/val split evenly among each label
+    # train/val split evenly among each label
+    train_dset_idxs, val_dset_idxs = stratified_split(tree_dset, per_class_sample_limit_factor=model_config.max_class_imbalance_factor) 
     train_dset = Subset(train_cp, train_dset_idxs)
     val_dset = Subset(val_cp, val_dset_idxs)
 
@@ -109,7 +110,7 @@ def init_training():
 
     # automated mixed precision -> allows for less important calculations with lower fp precision
     enable_amp = model_config.use_amp and device == 'cuda'
-    scaler = GradScaler(enabled=enable_amp, device=device)
+    scaler = GradScaler(enabled=enable_amp, device=device) if enable_amp else None
 
     #for name, p in tree_model.named_parameters():
     #    print(f"{name:60s} | shape={tuple(p.shape)} | requires_grad={p.requires_grad}")

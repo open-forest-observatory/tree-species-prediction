@@ -25,18 +25,27 @@ class TreeModelConfig:
     they will likely need experimenting/tuning.
     However it is known that the backbone needs smaller adjustments than the head.
     """
+    # input data/data preprocessing
     input_img_dim: tuple[int, int] = (518, 518) # size to scale input imgs to before giving to model
     downsample_threshold: int = 574             # if longer edge of input img > this, downsample instead of just crop
     downsample_to: int = 518                    # size to downsample long edge too before padding
+    num_workers: int = 8                       # workers for the dataloader
+    max_class_imbalance_factor: float = 10      # if class A has n samples, class B has m samples, 
+                                                # will subsample class A to be at most `max_class_imbalance_factor` * m samples
+    
+    # epoch loop iterations
     epochs: int = 20                            # num passes through the training dataset
-    batch_size: int = 128                       # how many images processed per backprop/param update
+    warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
+    freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
+    batch_size: int = 8                       # how many images processed per backprop/param update
+    
+    # parameter stepping
     head_lr: float = 1e-3                       # learning rate: how big of a step to take down gradient when updating model params
     backbone_lr: float = 1.0e-4     
     head_weight_decay: float = 1e-2             # factor to regularize weights towards 0
     backbone_weight_decay: float = 5e-3         
-    warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
-    freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
-    num_workers: int = 0                        # workers for the dataloader
+    
+    # optimizations
     use_amp: bool = True                        # automated mixed precision
     amp_dtype: torch.dtype = torch.float16      # dtype for amp scaling
     seed: int = 24                              # seed to maintain reproducibility within rng

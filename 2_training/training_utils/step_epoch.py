@@ -5,15 +5,17 @@ from tqdm import tqdm
 
 from configs.model_config import model_config
 
-def _step_epoch(tree_model, dataloader, device, optim=None, criterion=None, scaler=None, training=False):
+def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, training=False):
     # same fn used for training and validation, so setup accordingly
     if training:
         tree_model.train()
+        pbar_msg = 'Training'
         use_amp = True if scaler else False
         assert optim is not None
-        assert criterion is not None
     else:
         tree_model.eval()
+        pbar_msg = 'Validation'
+        use_amp = False
 
     # loss / acc tracking init
     running_loss = 0.0
@@ -23,10 +25,10 @@ def _step_epoch(tree_model, dataloader, device, optim=None, criterion=None, scal
     eps = 1e-12 # avoid div by 0
 
     # iterate through batches
-    pbar = tqdm(dataloader, desc="Training")
-    for batch_idx, (imgs, labels, metadata) in enumerate(dataloader):
-        imgs = imgs.to(device, non_blocking=True)
-        labels = labels.to(device, non_blocking=True)
+    pbar = tqdm(dataloader, desc=pbar_msg)
+    for batch_idx, (imgs, labels, metadata) in enumerate(pbar):
+        imgs = imgs.to(device, non_blocking=False)
+        labels = labels.to(device, non_blocking=False)
         batch_size = labels.size(0)
 
         # forward with optional automatic mixed precision
@@ -47,7 +49,7 @@ def _step_epoch(tree_model, dataloader, device, optim=None, criterion=None, scal
 
         # bunch of running metrics
         with torch.no_grad(): # don't track gradients just for metrics
-            running_loss += loss.detach.float().item() * batch_size
+            running_loss += float(loss.detach().item()) * batch_size
             preds = logits.argmax(dim=1) # predictions are largest nums of output logits
             correct += (preds == labels).sum().item() # count correct predictions
             total += batch_size

@@ -22,7 +22,7 @@ def get_classes_from_gpd_file_paths(paths):
 
     return sorted(species)
 
-def stratified_split(dset, val_ratio=0.2, seed=-1):
+def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=None, seed=-1):
     """
     Returns (train_subset, val_subset) with class-balanced split.
 
@@ -32,14 +32,27 @@ def stratified_split(dset, val_ratio=0.2, seed=-1):
     seed: int     random seed for reproducibility
     """
     labels = torch.tensor([m['label_idx'] for m in dset.meta], dtype=torch.long)
-    classes = torch.unique(labels).tolist()
+    classes, counts = torch.unique(labels, return_counts=True)
+    classes = classes.tolist()
+
+    # determine max samples per class if given `per_class_sample_limit_factor`
+    if per_class_sample_limit_factor is not None:
+        sample_limit = int(min(counts) * per_class_sample_limit_factor)
+    else:
+        sample_limit = None
 
     rng = torch.Generator().manual_seed(seed)
     train_idxs, val_idxs = [], []
     for c in classes:
         idxs = torch.nonzero(labels == c).squeeze(1) # get all samples of class c
-        n_samples_in_class = idxs.numel() 
-        perm = torch.randperm(n_samples_in_class, generator=rng) # random permutation of numbers
+        n_samples_in_class = idxs.numel()
+
+        if per_class_sample_limit_factor is not None:
+            n_samples = min(sample_limit, n_samples_in_class)
+        else:
+            n_samples = n_samples_in_class
+        
+        perm = torch.randperm(n_samples, generator=rng) # random permutation of numbers
         idxs = idxs[perm]
 
         n_val_samples = int(n_samples_in_class * val_ratio)
