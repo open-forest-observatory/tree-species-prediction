@@ -66,6 +66,7 @@ class TreeModelConfig:
 
     # misc
     seed: int = 24                              # seed to maintain reproducibility within rng
+    ckpt_dir_tag: str = ''                      # ckpt dirs are just date and time, use this for a more helpful training identifier
 
 
 model_config, model_args = parse_config_args(TreeModelConfig)

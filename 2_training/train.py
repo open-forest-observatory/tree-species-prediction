@@ -28,7 +28,7 @@ def train():
 
     # for naming ckpt dir
     ts = datetime.now().strftime('%m%d-%H%M%S')
-    cur_training_out_dir = path_config.training_ckpt_dir / ts
+    cur_training_out_dir = path_config.training_ckpt_dir / f"{ts}-{model_config.ckpt_dir_tag}"
     cur_training_out_dir.mkdir(parents=True)
 
     # save current model config to yaml file
