@@ -5,16 +5,16 @@ from tqdm import tqdm
 
 from configs.model_config import model_config
 
-def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, early_stopper=None, training=False):
+def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, early_stopper=None, training=False, epoch_num=None):
     # same fn used for training and validation, so setup accordingly
     if training:
         tree_model.train()
-        pbar_msg = 'Training'
+        pbar_msg = f"Training epoch {epoch_num if epoch_num is not None else ''}"
         use_amp = True if scaler else False
         assert optim is not None
     else:
         tree_model.eval()
-        pbar_msg = 'Validation'
+        pbar_msg = f"Validation epoch {epoch_num if epoch_num is not None else ''}"
         use_amp = False
 
     # loss / acc tracking init

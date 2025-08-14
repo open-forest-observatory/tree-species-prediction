@@ -50,7 +50,7 @@ def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_s
         if min_samples_per_class > 0 and n_samples_in_class < min_samples_per_class:
             continue
 
-        if per_class_sample_limit_factor is not None:
+        if per_class_sample_limit_factor > 0:
             n_samples = min(sample_limit, n_samples_in_class)
         else:
             n_samples = n_samples_in_class

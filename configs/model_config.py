@@ -30,12 +30,12 @@ class TreeModelConfig:
     downsample_threshold: int = 574             # if longer edge of input img > this, downsample instead of just crop
     downsample_to: int = 518                    # size to downsample long edge too before padding
     num_workers: int = 8                        # workers for the dataloader
-    max_class_imbalance_factor: float = 10      # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
+    max_class_imbalance_factor: float = 0      # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
-    min_samples_per_class: int = 0              # 0 -> no limit; exclude classes with fewer than this num samples
+    min_samples_per_class: int = 450              # 0 -> no limit; exclude classes with fewer than this num samples
     
     # epoch loop iterations
-    epochs: int = 20                            # num passes through the training dataset
+    epochs: int = 25                            # num passes through the training dataset
     warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
     freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
     batch_size: int = 16                         # how many images processed per backprop/param update
@@ -57,7 +57,7 @@ class TreeModelConfig:
     amp_dtype: torch.dtype = torch.float16      # dtype for amp scaling
     
     # early stopping
-    patience: int = 3                           # how many consecutive epochs must be same or worse before stopping training early
+    patience: int = 0                           # how many consecutive epochs must be same or worse before stopping training early
                                                 # enter 0 to disable early stopping
     improvement_margin: float = 0.              # how much better does prev epoch have to be to not stop early
     # metric tracked to determine when to stop (corresponds to metrics dict returned by `step_epoch()`)

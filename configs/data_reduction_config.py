@@ -9,7 +9,6 @@ from utils.config_utils import parse_config_args
 class DataReductionConfig:
     seed: Optional[int] = None
 
-    analyze: bool = False # will run future analysis scripts for previous experiments rather than running experiments
     data_reduction_method: Optional[str] = None
     subset_ratio: Optional[float] = None
     num_warm_start_epochs: int = 100 # number of epochs to train on the full dataset before subsetting

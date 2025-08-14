@@ -51,17 +51,22 @@ def train():
     #print(len(train_loader), len(val_loader))
 
     n_layers_unfrozen = 0
-    pbar = tqdm(range(model_config.epochs))
-    for epoch in pbar:
+    for epoch in range(model_config.epochs):
         # toggle backbone trainability and add its params to optimizer once `freeze_backbone_epochs` reached
         if epoch >= model_config.freeze_backbone_epochs and n_layers_unfrozen <= model_config.n_last_layers_to_unfreeze:
             n_layers_unfrozen += model_config.layer_unfreeze_step
             tree_model.unfreeze_last_n_backbone_layers(n=n_layers_unfrozen)
+        else:
+            early_stopper.enabled
+
+
+        # keep early_stopper disabled until after opening all layers, since it dips for a bit when unfreezing
+
             
         # train one step
         train_metrics = _step_epoch(
             tree_model, train_loader, device, criterion,
-            optim, scaler, early_stopper=None, training=True
+            optim, scaler, early_stopper=None, training=True, epoch_num=epoch+1
         )
         scheduler.step()
 
@@ -69,7 +74,7 @@ def train():
         with torch.no_grad():
             val_metrics = _step_epoch(
                 tree_model, val_loader, device, criterion,
-                optim=None, scaler=None, early_stopper=early_stopper, training=False
+                optim=None, scaler=None, early_stopper=early_stopper, training=False, epoch_num=epoch+1
             )
 
         # save ckpt for future analysis
