@@ -22,7 +22,7 @@ def get_classes_from_gpd_file_paths(paths):
 
     return sorted(species)
 
-def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=None, seed=-1):
+def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_samples_per_class=0, seed=-1):
     """
     Returns (train_subset, val_subset) with class-balanced split.
 
@@ -36,7 +36,7 @@ def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=None, se
     classes = classes.tolist()
 
     # determine max samples per class if given `per_class_sample_limit_factor`
-    if per_class_sample_limit_factor is not None:
+    if per_class_sample_limit_factor > 0:
         sample_limit = int(min(counts) * per_class_sample_limit_factor)
     else:
         sample_limit = None
@@ -47,6 +47,9 @@ def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=None, se
         idxs = torch.nonzero(labels == c).squeeze(1) # get all samples of class c
         n_samples_in_class = idxs.numel()
 
+        if min_samples_per_class > 0 and n_samples_in_class < min_samples_per_class:
+            continue
+
         if per_class_sample_limit_factor is not None:
             n_samples = min(sample_limit, n_samples_in_class)
         else:
@@ -55,7 +58,7 @@ def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=None, se
         perm = torch.randperm(n_samples, generator=rng) # random permutation of numbers
         idxs = idxs[perm]
 
-        n_val_samples = int(n_samples_in_class * val_ratio)
+        n_val_samples = int(n_samples * val_ratio)
         val_idxs.extend(idxs[:n_val_samples].tolist())
         train_idxs.extend(idxs[n_val_samples:].tolist())
 

@@ -11,8 +11,10 @@ from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
 from data.dataset import TreeDataset, collate_batch
 from configs.model_config import model_config
 from configs.path_config import path_config
+from utils.config_utils import kwargs_from_config
 from training_utils.data_utils import stratified_split
 from training_utils.image_processing import build_transforms
+from training_utils.early_stop import EarlyStopper
 
 # when adding weight decay, certain parameters should not be decayed
 DECAY_EXCLUDED_PARAM_TYPES = (
@@ -45,7 +47,6 @@ def assemble_param_groups(tree_model):
 
 def init_training():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(torch.cuda.is_available())
 
     tree_dset = TreeDataset( # init dataset
         imgs_root=path_config.cropped_tree_training_images / 'labelled',
@@ -76,7 +77,11 @@ def init_training():
     val_cp.transform = val_transform
 
     # train/val split evenly among each label
-    train_dset_idxs, val_dset_idxs = stratified_split(tree_dset, per_class_sample_limit_factor=model_config.max_class_imbalance_factor) 
+    train_dset_idxs, val_dset_idxs = stratified_split(
+        tree_dset,
+        per_class_sample_limit_factor=model_config.max_class_imbalance_factor,
+        min_samples_per_class=model_config.min_samples_per_class
+    ) 
     train_dset = Subset(train_cp, train_dset_idxs)
     val_dset = Subset(val_cp, val_dset_idxs)
 
@@ -97,6 +102,10 @@ def init_training():
         pin_memory=True,
         collate_fn=collate_batch
     )
+
+    # controls early stopping of training if performance plateaus
+    # disabled if model_config.patience == 0
+    early_stopper = EarlyStopper(**kwargs_from_config(model_config, EarlyStopper))
 
     #for name, p in tree_model.named_parameters():
     #    print(f"{name:60s} | shape={tuple(p.shape)} | requires_grad={p.requires_grad}")
@@ -129,4 +138,4 @@ def init_training():
         # use just cosine annealing if no warmup
         scheduler = CosineAnnealingLR(optim, T_max=model_config.epochs)
 
-    return tree_model, tree_dset, train_loader, val_loader, optim, criterion, scheduler, scaler, device
+    return tree_model, tree_dset, train_loader, val_loader, optim, criterion, scheduler, scaler, device, early_stopper

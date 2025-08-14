@@ -4,6 +4,8 @@ from torchvision import transforms as T
 import timm
 from pathlib import Path
 
+from configs.model_config import model_config
+
 class TreeSpeciesClassifierFromPretrained(nn.Module):
     """
     Re-uses the PlantCLEF ViT-DINOv2 backbone, drops its 7,806-way classifier head,
@@ -53,11 +55,12 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
         # un/freeze backbone
         self.toggle_backbone_weights_trainability(backbone_is_trainable)
 
-        # append a new classification head
+        # append a new classification head with 2 FC layers and optional dropout
         layers = []
         if drop_rate > 0:
             layers.append(nn.Dropout(p=drop_rate))
-        layers.append(nn.Linear(self.backbone.num_features, num_classes))
+        layers.append(nn.Linear(self.backbone.num_features, model_config.n_intermediate_fc_layer_neurons))
+        layers.append(nn.Linear(model_config.n_intermediate_fc_layer_neurons, num_classes))
         self.classifier_head = nn.Sequential(*layers)
 
         # transforms similar to DINOv2 pre normalization
@@ -80,6 +83,16 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
     def toggle_backbone_weights_trainability(self, backbone_is_trainable):
         for p in self.backbone.parameters():
             p.requires_grad = backbone_is_trainable
+
+    def unfreeze_last_n_backbone_layers(self, n):
+        backbone_blocks = self.backbone.blocks
+        total_blocks = len(backbone_blocks)
+        n_unfreeze = min(n, total_blocks)
+        for i in range(total_blocks - n_unfreeze, total_blocks):
+            for p in backbone_blocks[i].parameters():
+                p.requires_grad = True
+        
+        print(f"*** {n_unfreeze} Backbone layers unfrozen. Target num unfrozen layers: {model_config.n_last_layers_to_unfreeze} --- Total Backbone layers: {total_blocks}")
 
     def forward(self, x):
         feature_tensor = self.backbone(x) # (B, back_bone_feature_dim)

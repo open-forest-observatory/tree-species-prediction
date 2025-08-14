@@ -3,6 +3,8 @@ import torch
 from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
+import json, yaml
+from dataclasses import asdict
 
 import _bootstrap
 from configs.model_config import model_config
@@ -13,11 +15,7 @@ from training_utils.data_utils import get_classes_from_gpd_file_paths, stratifie
 
 ''' TODO:
 - output model cfg to yaml in ckpt dir
-- metrics:
-    - accuracy
-    - precision
-    - f1 score
-    - confusion matrix
+- 
 - context manager for safe exiting on training
 - plotting/visualizing of metrics and loss
 '''
@@ -33,8 +31,13 @@ def train():
     cur_training_out_dir = path_config.training_ckpt_dir / ts
     cur_training_out_dir.mkdir(parents=True)
 
+    # save current model config to yaml file
+    with open(cur_training_out_dir / "cfg_dump.yaml", 'w') as cfg_file:
+        cfg_dict = asdict(model_config)
+        yaml.dump(cfg_dict, cfg_file, default_flow_style=False)
+
     # init everything required for model training
-    tree_model, tree_dset, train_loader, val_loader, optim, criterion, scheduler, scaler, device = init_training()
+    tree_model, tree_dset, train_loader, val_loader, optim, criterion, scheduler, scaler, device, early_stopper = init_training()
 
     # count n_samples per class
     labels = torch.tensor([m['label_idx'] for m in tree_dset.meta])
@@ -45,19 +48,20 @@ def train():
     # sanity check test (comment out for actual training)
     #imgs, labels, metas = next(iter(train_loader))
     #print(imgs.shape, labels.shape, type(metas), len(metas))
-    print(len(train_loader), len(val_loader))
+    #print(len(train_loader), len(val_loader))
 
+    n_layers_unfrozen = 0
     pbar = tqdm(range(model_config.epochs))
     for epoch in pbar:
         # toggle backbone trainability and add its params to optimizer once `freeze_backbone_epochs` reached
-        if epoch == model_config.freeze_backbone_epochs:
-            tree_model.toggle_backbone_weights_trainability(True)
-            print("*** Backbone weights tunable")
+        if epoch >= model_config.freeze_backbone_epochs and n_layers_unfrozen <= model_config.n_last_layers_to_unfreeze:
+            n_layers_unfrozen += model_config.layer_unfreeze_step
+            tree_model.unfreeze_last_n_backbone_layers(n=n_layers_unfrozen)
             
         # train one step
         train_metrics = _step_epoch(
             tree_model, train_loader, device, criterion,
-            optim, scaler, training=True
+            optim, scaler, early_stopper=None, training=True
         )
         scheduler.step()
 
@@ -65,10 +69,12 @@ def train():
         with torch.no_grad():
             val_metrics = _step_epoch(
                 tree_model, val_loader, device, criterion,
-                optim=None, scaler=None, training=False
+                optim=None, scaler=None, early_stopper=early_stopper, training=False
             )
 
         # save ckpt for future analysis
+        ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1']:.4f}-.pt"
+        log_path = ckpt_path.parent / f"{ckpt_path.stem}.json"
         torch.save({
             'epoch': epoch + 1,
             'model_state': tree_model.state_dict(),
@@ -76,7 +82,16 @@ def train():
             'sched_state': scheduler.state_dict(),
             'train_metrics': train_metrics,
             'val_metrics': val_metrics,
-        }, cur_training_out_dir / f'{epoch+1}.pt')
+        }, ckpt_path)
+        print(f"*** Saved checkpoint to: {ckpt_path}")
+
+        with open(log_path, 'w') as log_file:
+            epoch_log = {'epoch': epoch+1, 'train_metrics': train_metrics, 'val_metrics': val_metrics}
+            json.dump(epoch_log, log_file, indent=4)
+
+        if early_stopper is not None and early_stopper.stopped:
+            print(f"No improvements of validation metric {early_stopper.monitor_metric} in the last {early_stopper.patience} epochs. Stopping training...")
+            break
 
 if __name__ == '__main__':
     train()

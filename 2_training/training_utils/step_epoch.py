@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 from configs.model_config import model_config
 
-def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, training=False):
+def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, early_stopper=None, training=False):
     # same fn used for training and validation, so setup accordingly
     if training:
         tree_model.train()
@@ -99,10 +99,16 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
     recall = per_label_recall[support].mean().item()
     f1 = per_label_f1[support].mean().item()
 
-    return {
+    metrics = {
         'loss': running_loss / total,   # avg negative log likelihood
         'accuracy': accuracy,           # how many predictions were correct
-        'precision': precision,         # purity; penalizes false positives
-        'recall': recall,               # sensitivity; penalizes false negatives
+        'precision': precision,         # purity; high prec -> minimize false positives
+        'recall': recall,               # sensitivity; high recall -> minimize false negatives
         'f1': f1,                       # balance of precision and recall
     }
+
+    # early stopping check -> parent train fn should handle the early_stopper.stop_now
+    if early_stopper is not None and early_stopper.enabled:
+        stop_now, _ = early_stopper.step(metrics)
+
+    return metrics

@@ -1,7 +1,8 @@
 import argparse
 from pathlib import Path
-from dataclasses import fields, MISSING
+from dataclasses import fields, MISSING, is_dataclass, asdict
 from typing import Optional, List, get_args, get_origin, Union
+import yaml
 
 def _unwrap_optional(t):
     """Return the first non-None type if t is Optional[...]; otherwise return t unchanged."""
@@ -95,3 +96,26 @@ def parse_config_args(config_class):
             setattr(config, name, val)
 
     return config, args
+
+def kwargs_from_config(cfg, target_cls):
+    "init a target class with args from another class"
+    cfg_dict = asdict(cfg) if is_dataclass(cfg) else vars(cfg)
+    allowed  = {f.name for f in fields(target_cls)}
+    return {k: v for k, v in cfg_dict.items() if k in allowed}
+
+# YAML Object Parsing
+def _str_representer(dumper, obj):
+    """
+    Generic representer to serialize objects as their string representation.
+    The YAML tag will be derived from the class name.
+    """
+    # Create a YAML tag based on the class name
+    tag = f"!{obj.__class__.__name__}"
+    return dumper.represent_scalar(tag, str(obj))
+
+def register_yaml_str_representers(class_types):
+    if not isinstance(class_types, list):
+        class_types = [class_types]
+    
+    for cls_type in class_types:
+        yaml.add_representer(cls_type, _str_representer)
