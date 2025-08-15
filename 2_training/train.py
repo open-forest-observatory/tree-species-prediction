@@ -1,10 +1,10 @@
 import torch
-
 from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
 import json, yaml
 from dataclasses import asdict
+import matplotlib.pyplot as plt
 
 import _bootstrap
 from configs.model_config import model_config
@@ -12,6 +12,8 @@ from configs.path_config import path_config
 from training_utils.initializers import init_training
 from training_utils.step_epoch import _step_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, stratified_split
+from training_utils.visualization import confusion_matrix
+from torch.utils.tensorboard import SummaryWriter
 
 ''' TODO:
 - output model cfg to yaml in ckpt dir
@@ -30,6 +32,7 @@ def train():
     ts = datetime.now().strftime('%m%d-%H%M%S')
     cur_training_out_dir = path_config.training_ckpt_dir / f"{ts}-{model_config.ckpt_dir_tag}"
     cur_training_out_dir.mkdir(parents=True)
+    tb_writer = SummaryWriter(log_dir=cur_training_out_dir / "tensorboard_logs")
 
     # save current model config to yaml file
     with open(cur_training_out_dir / "cfg_dump.yaml", 'w') as cfg_file:
@@ -77,6 +80,22 @@ def train():
                 optim=None, scaler=None, early_stopper=early_stopper, training=False, epoch_num=epoch+1
             )
 
+            # Compute confusion matrix for validation set
+            matrix_fig = confusion_matrix(unique_species_labels, val_loader, tree_model, device)
+            tb_writer.add_figure("Confusion Matrix", matrix_fig, epoch + 1)
+            plt.close(matrix_fig)
+
+        # Logging train metrics
+        for key, value in train_metrics.items():
+            tb_writer.add_scalar(f"Train/{key}", value, epoch + 1)
+
+        # Logging validation metrics
+        for key, value in val_metrics.items():
+            tb_writer.add_scalar(f"Val/{key}", value, epoch + 1)
+        # Log learning rate
+        tb_writer.add_scalar("Learning_Rate", scheduler.get_last_lr()[0], epoch + 1)
+
+
         # save ckpt for future analysis
         ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1']:.4f}-.pt"
         log_path = ckpt_path.parent / f"{ckpt_path.stem}.json"
@@ -97,6 +116,8 @@ def train():
         if early_stopper is not None and early_stopper.stopped:
             print(f"No improvements of validation metric {early_stopper.monitor_metric} in the last {early_stopper.patience} epochs. Stopping training...")
             break
+
+    tb_writer.close()
 
 if __name__ == '__main__':
     train()
