@@ -26,5 +26,5 @@ def confusion_matrix(unique_class_labels, dataloader, model, device):
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=unique_class_labels, yticklabels=unique_class_labels, ax=ax)
     ax.set_xlabel("Predicted label")
     ax.set_ylabel("True label")
-    ax.set_title("Validation Confusion Matrix")
+    ax.set_title("Confusion Matrix")
     return fig

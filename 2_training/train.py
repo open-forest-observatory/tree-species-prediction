@@ -82,7 +82,7 @@ def train():
 
             # Compute confusion matrix for validation set
             matrix_fig = confusion_matrix(unique_species_labels, val_loader, tree_model, device)
-            tb_writer.add_figure("Confusion Matrix", matrix_fig, epoch + 1)
+            tb_writer.add_figure("Val Confusion Matrix", matrix_fig, epoch + 1)
             plt.close(matrix_fig)
 
         # Logging train metrics
