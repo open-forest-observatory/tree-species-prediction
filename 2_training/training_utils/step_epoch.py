@@ -56,7 +56,7 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
 
             # init per class metrics counters on first pass (if num_classes is still none)
             if num_classes is None:
-                num_classes = logits.size(0) # length of last layer output equates to num classes
+                num_classes = logits.size(1) # length of last layer output equates to num classes
                 tp = torch.zeros(num_classes, dtype=torch.long) # true positives
                 fp = torch.zeros(num_classes, dtype=torch.long) # true negatives
                 fn = torch.zeros(num_classes, dtype=torch.long) # false negatives
