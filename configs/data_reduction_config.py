@@ -10,11 +10,10 @@ class DataReductionConfig:
     seed: Optional[int] = None
 
     data_reduction_method: Optional[str] = None
-    subset_ratio: Optional[float] = None
-    num_warm_start_epochs: int = 100 # number of epochs to train on the full dataset before subsetting
-    subbatch_size: int = 250 # set to 1 for per sample selection (compute expensive)
-    epoch_selection_interval: int = 50 # percent of total epochs to recompute subsets
-    patience: int = 100
-    use_jit: bool = False
+    subset_ratio: Optional[float] = 0.5
+    num_warm_start_epochs: int = 0                  # number of epochs to train on the full dataset before subsetting
+    subbatch_size: int = 1                          # set to 1 for per sample selection (set as low as possible before OMP takes too long)
+    epoch_selection_interval: int = 1               # how many epochs between recomputing subsets
+    use_backbone_gradients: bool = False            # use gradients of backbone as well as classifier head (compute expensive)
 
 dr_config, dr_args = parse_config_args(DataReductionConfig)

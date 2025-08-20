@@ -5,6 +5,7 @@ from datetime import datetime
 import json, yaml
 from dataclasses import asdict
 import matplotlib.pyplot as plt
+import copy
 
 import _bootstrap
 from configs.model_config import model_config
@@ -14,10 +15,10 @@ from training_utils.step_epoch import _step_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, stratified_split
 from training_utils.visualization import confusion_matrix
 from torch.utils.tensorboard import SummaryWriter
+from training_utils.data_reduction_utils import gradsel_reduce, _is_subset_epoch
+from training_utils.data_utils import get_classes_from_gpd_file_paths, summarize_split_by_tree, check_no_tree_overlap
 
 ''' TODO:
-- output model cfg to yaml in ckpt dir
-- 
 - context manager for safe exiting on training
 - plotting/visualizing of metrics and loss
 '''
@@ -27,6 +28,14 @@ def train():
     # might be useful later for referencing
     gpkg_dsets = list(Path(path_config.drone_crowns_with_field_attributes).glob("*"))
     unique_species_labels = get_classes_from_gpd_file_paths(gpkg_dsets)
+
+    # init everything required for model training
+    tree_model, tree_dset, train_loader, val_loader, train_transform, val_transform, \
+    optim, criterion, scheduler, scaler, device, early_stopper = init_training()
+
+    # for data reduction
+    full_dset_val_transform = copy.copy(tree_dset)
+    full_dset_val_transform.transform = val_transform
 
     # for naming ckpt dir
     ts = datetime.now().strftime('%m%d-%H%M%S')
@@ -39,21 +48,18 @@ def train():
         cfg_dict = asdict(model_config)
         yaml.dump(cfg_dict, cfg_file, default_flow_style=False)
 
-    # init everything required for model training
-    tree_model, tree_dset, train_loader, val_loader, optim, criterion, scheduler, scaler, device, early_stopper = init_training()
-
-    # count n_samples per class
-    labels = torch.tensor([m['label_idx'] for m in tree_dset.meta])
-    unique, counts = torch.unique(labels, return_counts=True)
-    for idx, count in zip(unique.tolist(), counts.tolist()):
-        print(tree_dset.idx2label_map[idx], count)
-
-    # sanity check test (comment out for actual training)
-    #imgs, labels, metas = next(iter(train_loader))
-    #print(imgs.shape, labels.shape, type(metas), len(metas))
-    #print(len(train_loader), len(val_loader))
+    # for debugging (may need again later):
+    # count n_samples per class of whole dataset
+    #labels = torch.tensor([m['label_idx'] for m in tree_dset.meta])
+    #unique, counts = torch.unique(labels, return_counts=True)
+    #for idx, count in zip(unique.tolist(), counts.tolist()):
+    #    print(tree_dset.idx2label_map[idx], count)
+    # list model parameters/layers
+    #for name, p in tree_model.named_parameters():
+    #    print(name)
 
     n_layers_unfrozen = 0
+    prev_subset_idxs = None # for data reduction
     for epoch in range(model_config.epochs):
         # toggle backbone trainability and add its params to optimizer once `freeze_backbone_epochs` reached
         if epoch >= model_config.freeze_backbone_epochs and n_layers_unfrozen <= model_config.n_last_layers_to_unfreeze:
@@ -62,9 +68,7 @@ def train():
         else:
             early_stopper.enabled
 
-
-        # keep early_stopper disabled until after opening all layers, since it dips for a bit when unfreezing
-
+        # TODO keep early_stopper disabled until after opening all layers, since it dips for a bit when unfreezing
             
         # train one step
         train_metrics = _step_epoch(
@@ -95,6 +99,25 @@ def train():
         # Log learning rate
         tb_writer.add_scalar("Learning_Rate", scheduler.get_last_lr()[0], epoch + 1)
 
+        # optional gradient based subset selection with OMP (data reduction)
+        if model_config.use_data_reduction and _is_subset_epoch(epoch): # check if time for subset
+            from configs.data_reduction_config import dr_config # only need to import if opted to use data reduction
+            
+            new_train_loader, new_val_loader, chosen_idxs_pool = gradsel_reduce(
+                model=tree_model,
+                base_dataset=full_dset_val_transform,
+                criterion=criterion,
+                epoch_idx=epoch,
+                train_transform=train_transform,
+                val_transform=val_transform,
+                reduction_ratio=dr_config.subset_ratio,
+                subbatch_size=dr_config.subbatch_size,
+                device=device,
+                prev_subset_idxs=prev_subset_idxs
+            )
+            del train_loader, val_loader
+            train_loader, val_loader = new_train_loader, new_val_loader
+            prev_subset_idxs = chosen_idxs_pool
 
         # save ckpt for future analysis
         ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1']:.4f}-.pt"
