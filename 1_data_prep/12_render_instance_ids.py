@@ -43,13 +43,13 @@ if __name__ == "__main__":
         labels_file = Path(path_config.drone_crowns_with_field_attributes, f"{dataset}.gpkg")
         # The mesh exported from Metashape
         mesh_file = Path(
-            path_config.photogrammetry_folder, dataset, "outputs", f"{dataset}_model.ply"
+            path_config.photogrammetry_folder, dataset, "output", f"{dataset}_mesh.ply"
         )
         cameras_file = Path(
-            path_config.photogrammetry_folder, dataset, "outputs", f"{dataset}_cameras.xml"
+            path_config.photogrammetry_folder, dataset, "output", f"{dataset}_cameras.xml"
         )
         dtm_file = Path(
-            path_config.photogrammetry_folder, dataset, "outputs", f"{dataset}_dtm-ptcloud.tif"
+            path_config.photogrammetry_folder, dataset, "output", f"{dataset}_dtm-ptcloud.tif"
         )
         # The image folder used to create the Metashape project
         image_folder = Path(path_config.raw_image_sets_folder, dataset)
@@ -68,7 +68,7 @@ if __name__ == "__main__":
             render_labels(
                 mesh_file=mesh_file,
                 cameras_file=cameras_file,
-                input_CRS=INPUT_CRS,
+                mesh_CRS=INPUT_CRS,
                 image_folder=image_folder,
                 texture=labels_file,
                 texture_column_name=LABEL_COLUMN_NAME,
