@@ -11,16 +11,16 @@ class PathConfig:
     # Locations of installed dependencies
     automate_metashape_path: Path = Path("/ofo-share/repos-david/automate-metashape")
     metashape_python_path: Path = Path("/home/exouser/miniconda3/envs/meta/bin/python")
-    
+
     # This path can edited if working with a copy of the data
     data_root_folder: Path = Path("/ofo-share/species-prediction-project/")
-    
+
     # Inputs
     # TODO this could be updated to be within the DATA_ROOT_FOLDER tree
     imagery_datasets_folder: Path = Path(
         "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
     )
-    
+
     # TODO consider renaming this to "inputs" if we want to be consistent with the NRS project
     raw_folder: Path = Path(data_root_folder, "raw")
     ground_reference_folder: Path = Path(raw_folder, "ground-reference")
@@ -34,20 +34,20 @@ class PathConfig:
 
     # Path to parent remote folder with all missions
     all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_01"
-    
+
     # Intermediate
     intermediate_data_folder: Path = Path(data_root_folder, "intermediate")
     overlapping_plots_file: Path = Path(
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )
-    photogrammetry_folder: Path = Path(intermediate_data_folder, "photogrammetry")
+    photogrammetry_folder: Path = Path("/ofo-share/argo-output/species_project")
     preprocessing_folder: Path = Path(intermediate_data_folder, "preprocessing")
     raw_image_sets_folder: Path = Path(intermediate_data_folder, "raw_image_sets")
 
     derived_metashape_configs_folder: Path = Path(
         intermediate_data_folder, "metashape_configs"
     )
-    
+
     # Inputs for first preprocessing step 01_get_mission_altitude.py
     mission_altitudes_folder: Path = Path(preprocessing_folder, "mission_altitudes")
     missions_outside_dtm_list: Path = Path(
@@ -67,7 +67,7 @@ class PathConfig:
 
     hdbscan_clustered_plots = Path(intermediate_data_folder, "hdbscan_clustered_plots.gpkg")
     train_test_split_file = Path(intermediate_data_folder, "train_test_split.csv")
-    
+
     drone_images_root: Path = Path(
         "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
     )
