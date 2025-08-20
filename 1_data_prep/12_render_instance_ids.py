@@ -53,6 +53,7 @@ if __name__ == "__main__":
         )
         # The image folder used to create the Metashape project
         image_folder = Path(path_config.raw_image_sets_folder, dataset)
+        original_image_folder = Path("/data/argo-input/datasets", dataset)
 
         # OUTPUTS
         # Where to save the renders
@@ -70,6 +71,7 @@ if __name__ == "__main__":
                 cameras_file=cameras_file,
                 mesh_CRS=INPUT_CRS,
                 image_folder=image_folder,
+                original_image_folder=original_image_folder,
                 texture=labels_file,
                 texture_column_name=LABEL_COLUMN_NAME,
                 render_savefolder=render_output_folder,
