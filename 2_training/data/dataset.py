@@ -62,18 +62,28 @@ class TreeDataset(Dataset):
 
         for m in self.meta:
             m['label_idx'] = self.label2idx_map[m['species']]
+            m['unique_treeID'] = f"{m['dset']}-{m['treeID']}"
 
         # get the row idx of each tree in the gpkg file
         if gpkg_dir is not None:
             self.gpkg_dir = Path(gpkg_dir)
             self.gpkg_LUT = self._build_gpkg_lookup_tables() # dset_path : {tree_id (str): gpkg_row_idx}
-            
+            #print(self.gpkg_LUT)
             for meta_dict in self.meta:
                 tree_id_str = str(meta_dict['treeID'])
                 gpkg_fp = gpkg_dir / f"{meta_dict['dset']}.gpkg"
                 if not gpkg_fp.exists():
                     raise FileNotFoundError(f"Could not find: {gpkg_fp}")
-                meta_dict['gpkg_row_idx'] = self.gpkg_LUT[meta_dict['dset']][tree_id_str]
+                
+                # TODO: Sometimes can't find the row index, says key error with some tree_id_strs
+                try:
+                    meta_dict['gpkg_row_idx'] = self.gpkg_LUT[meta_dict['dset']][tree_id_str]
+                except:
+                    pass
+                    #print(meta_dict['dset'], tree_id_str)
+
+
+        
 
         self.transform = (
             transform if transform is not None

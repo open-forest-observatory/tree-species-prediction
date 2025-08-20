@@ -8,13 +8,13 @@ import copy
 
 import _bootstrap
 from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
-from data.dataset import TreeDataset, collate_batch
+from data.dataset import TreeDataset
 from configs.model_config import model_config
 from configs.path_config import path_config
 from utils.config_utils import kwargs_from_config
-from training_utils.data_utils import stratified_split
-from training_utils.image_processing import build_transforms
+from training_utils.data_utils import assemble_dataloaders
 from training_utils.early_stop import EarlyStopper
+from training_utils.image_processing import build_transforms
 
 # when adding weight decay, certain parameters should not be decayed
 DECAY_EXCLUDED_PARAM_TYPES = (
@@ -70,38 +70,7 @@ def init_training():
         std=tree_model.backbone_data_cfg['std']
     )
 
-    # swap default transform of dataset class with the ones just built
-    train_cp = copy.copy(tree_dset)
-    train_cp.transform = train_transform
-    val_cp = copy.copy(tree_dset)
-    val_cp.transform = val_transform
-
-    # train/val split evenly among each label
-    train_dset_idxs, val_dset_idxs = stratified_split(
-        tree_dset,
-        per_class_sample_limit_factor=model_config.max_class_imbalance_factor,
-        min_samples_per_class=model_config.min_samples_per_class
-    ) 
-    train_dset = Subset(train_cp, train_dset_idxs)
-    val_dset = Subset(val_cp, val_dset_idxs)
-
-    train_loader = DataLoader(
-        train_dset,
-        batch_size=model_config.batch_size,
-        shuffle=True,
-        num_workers=model_config.num_workers,
-        pin_memory=True,
-        collate_fn=collate_batch
-    )
-
-    val_loader = DataLoader(
-        val_dset,
-        batch_size=model_config.batch_size,
-        shuffle=False,
-        num_workers=model_config.num_workers,
-        pin_memory=True,
-        collate_fn=collate_batch
-    )
+    train_loader, val_loader = assemble_dataloaders(tree_dset, train_transform, val_transform, return_idxs=False, idxs_pool=None)
 
     # controls early stopping of training if performance plateaus
     # disabled if model_config.patience == 0
@@ -138,4 +107,5 @@ def init_training():
         # use just cosine annealing if no warmup
         scheduler = CosineAnnealingLR(optim, T_max=model_config.epochs)
 
-    return tree_model, tree_dset, train_loader, val_loader, optim, criterion, scheduler, scaler, device, early_stopper
+    return tree_model, tree_dset, train_loader, val_loader, train_transform, val_transform, \
+    optim, criterion, scheduler, scaler, device, early_stopper
