@@ -6,7 +6,9 @@ from configs.path_config import path_config
 # path resolved in _bootstrap.py
 from metashape_workflow_functions import make_derived_yaml
 
-METASHAPE_CONFIG = Path(path_config.automate_metashape_path, "config", "config-base.yml")
+METASHAPE_CONFIG = Path(
+    path_config.automate_metashape_path, "config", "config-base.yml"
+)
 
 
 def produce_combined_config(imagery_folder: Path):
@@ -15,83 +17,53 @@ def produce_combined_config(imagery_folder: Path):
 
     _, nadir_id, oblique_id = run_name.split("_")
     # Find the path to the imagery datasets.
+    # Note that we could skip the step of computing oblique and nadir folders and just use one glob
+    # specifying that folders are nested three levels deep, but this is a little more robust to
+    # spurious files/folders
     nadir_dataset_path = Path(imagery_folder, "nadir", nadir_id)
     oblique_dataset_path = Path(imagery_folder, "oblique", oblique_id)
-    # Find the sub-folders, corresponding to sub-missions of this dataset
-    nadir_sub_missions = [str(f) for f in nadir_dataset_path.glob("*") if f.is_dir()]
-    oblique_sub_missions = [
-        str(f) for f in oblique_dataset_path.glob("*") if f.is_dir()
+    # Find the sub-folders, corresponding to sub-missions of this dataset, for both oblique and
+    # nadir images
+    sub_missions = list(nadir_dataset_path.glob("*")) + list(oblique_dataset_path.glob("*"))
+
+    # When we run photogrammetry it's going to be within docker and the data will be mounted in a
+    # volume. This will change the paths compared to what's on /ofo-share. This updates the input
+    # folders so they are appropriate for docker.
+    sub_missions = [
+        str(
+            Path(
+                path_config.argo_imagery_path,
+                f.relative_to(path_config.argo_inputs_image_sets),
+            )
+        )
+        for f in sub_missions
+        if f.is_dir()
     ]
 
-    # Create the output folders for photogrammetry outputs
-    project_folder = Path(path_config.photogrammetry_folder, run_name)
-    output_folder = Path(project_folder, "outputs")
-
-    # Build and override dict that will update the base config with run-specific information
+    # Build and override dict that will update the base config with the location of the input images.
     # Also, only generate the DSM-ptcloud orthomosaic. Note, we only need the DTM and mesh-based
     # DSM for downstream experiments, but the ptcloud-based DEM must be computed for building the
     # orthomosaic
+    # Finally, the point clouds are removed from the project files to save space.
+
     override_dict = {
-        "photo_path": nadir_sub_missions,
-        "photo_path_secondary": oblique_sub_missions,
-        "output_path": str(output_folder),
-        "project_path": str(project_folder),
-        "run_name": run_name,
+        "photo_path": sub_missions,
         "buildOrthomosaic": {"surface": ["DSM-ptcloud"]},
         "buildPointCloud": {"remove_after_export": True},
     }
-
-    output_config_file = Path(path_config.derived_metashape_configs_folder, run_name + ".yml")
+    # Where to save the config
+    output_config_file = Path(
+        path_config.derived_metashape_configs_folder, run_name + ".yml"
+    )
     # Save the derived config
     make_derived_yaml(
         METASHAPE_CONFIG, output_path=output_config_file, override_options=override_dict
     )
 
 
-def make_photogrammetry_run_scripts(n_chunks=4):
-    # List all configs
-    derived_configs = sorted(path_config.derived_metashape_configs_folder.glob("*yml"))
-    # TODO consider shuffling the files in case there's a structure to which datasets are large
-    # The path to the metashape runner script
-    metashape_script_path = str(
-        Path(path_config.automate_metashape_path, "python", "metashape_workflow.py")
-    )
-    # Create a string that contains the python run command (one for each mission-pair to process)
-    run_strings = [
-        " ".join(
-            [
-                path_config.metashape_python_path,
-                metashape_script_path,
-                "--config_file",
-                str(derived_config),
-            ]
-        )
-        + "\n"
-        for derived_config in derived_configs
-    ]
-
-    # Determine how many files to run per machine
-    n_files_per_chunk = (len(run_strings)) / n_chunks
-    # Calculate splits so that the number of lines per chunk is at most one different
-    splits = [int(round(i * n_files_per_chunk)) for i in range(n_chunks + 1)]
-
-    # Write out one file per chunk
-    for i in range(n_chunks):
-        # Create the named output file
-        with open(
-            Path(path_config.derived_metashape_configs_folder, f"run_script_{i:02}.sh"), "w"
-        ) as output_file_h:
-            # Get the corresponding lines and write them out
-            chunk_run_strings = run_strings[splits[i] : splits[i + 1]]
-            output_file_h.writelines(chunk_run_strings)
-
-
 if __name__ == "__main__":
     # List all the imagery folders
-    imagery_sets = path_config.raw_image_sets_folder.glob("*")
+    imagery_sets = list(path_config.argo_inputs_image_sets.glob("*"))
     # For each folder, produce the corresponding config
     for imagery_set in imagery_sets:
         produce_combined_config(imagery_set)
-
-    # Create scripts that can be run on multiple machines to sequentially run projects
-    make_photogrammetry_run_scripts()
