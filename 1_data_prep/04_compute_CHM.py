@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Optional, Union
-import sys
 
 import numpy as np
 import rioxarray
@@ -81,6 +80,11 @@ def compute_CHM(
 
 
 if __name__ == "__main__":
+    if not path_config.photogrammetry_folder.is_symlink():
+        # symlink from where argo produced the photogrammetry outputs to the working file tree
+        path_config.photogrammetry_folder.symlink_to(
+            path_config.photogrammetry_folder_argo
+        )
     # List all the folders, corresponding to photogrammetry for a nadir-oblique pair
     photogrammetry_run_folders = path_config.photogrammetry_folder.glob("*_*")
     # Iterate over the folders
@@ -89,11 +93,11 @@ if __name__ == "__main__":
         run_ID = photogrammetry_run_folder.parts[-1]
 
         # This is where all the data products are saved to
-        photogrammetry_products_folder = Path(photogrammetry_run_folder, "outputs")
+        photogrammetry_products_folder = Path(photogrammetry_run_folder, "output")
         # There should be only one file with the corresponding ending, but the first part is a
         # timestamp that is unknown
-        dsm_file = Path(photogrammetry_run_folder, "outputs", f"{run_ID}_dsm-mesh.tif")
-        dtm_file = Path(photogrammetry_run_folder, "outputs", f"{run_ID}_dtm-ptcloud.tif")
+        dsm_file = Path(photogrammetry_products_folder, f"{run_ID}_dsm-mesh.tif")
+        dtm_file = Path(photogrammetry_products_folder, f"{run_ID}_dtm-ptcloud.tif")
 
         if not dsm_file.is_file() or not dtm_file.is_file():
             print(f"Skipping run {run_ID} because of missing data")

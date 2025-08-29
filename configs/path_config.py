@@ -40,6 +40,7 @@ class PathConfig:
     overlapping_plots_file: Path = Path(
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )
+    photogrammetry_folder_argo: Path = Path("/ofo-share/argo-output/species_project")
     photogrammetry_folder: Path = Path(intermediate_data_folder, "photogrammetry")
     preprocessing_folder: Path = Path(intermediate_data_folder, "preprocessing")
     raw_image_sets_folder: Path = Path(intermediate_data_folder, "raw_image_sets")
