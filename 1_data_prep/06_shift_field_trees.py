@@ -196,18 +196,23 @@ if __name__ == "__main__":
 
         # Parse the mission names
         ID = detected_tree_folder.stem
-        _, high_nadir_ID, low_oblique_ID = ID.split("_")
+        plot_ID, high_nadir_ID, low_oblique_ID = ID.split("_")
 
+        plot_ID = int(plot_ID.lstrip("0"))
         high_nadir_ID = int(high_nadir_ID.lstrip("0"))
         low_oblique_ID = int(low_oblique_ID.lstrip("0"))
 
         # Query the correct row
         matching_row = plot_pairings.query(
-            "@low_oblique_ID == mission_id_lo and @high_nadir_ID == mission_id_hn"
+            "@low_oblique_ID == mission_id_lo and @high_nadir_ID == mission_id_hn and @plot_ID == plot_id"
         )
 
-        if len(matching_row) == 0:
-            raise ValueError("Multiple or now matching rows")
+        if len(matching_row) > 1:
+            print(matching_row)
+            raise ValueError("Multiple matching rows")
+        elif len(matching_row) == 0:
+            print(f"Warning: no match for {plot_ID}, {high_nadir_ID}, {low_oblique_ID}")
+            continue
 
         # use the `plot_id` field to determine the corresponding plot ID
         # Then point to that file and run this pipeline
@@ -215,6 +220,9 @@ if __name__ == "__main__":
 
         field_trees = ground_reference_trees.query("@plot_ID == plot_id")
 
+        if len(field_trees) == 0:
+            print(f"No field trees for plot_ID {plot_ID}. Skipping.")
+            continue
         # Compute the shift between the field and drone trees
         shifted_field_trees = align_plot(
             field_trees=field_trees, drone_trees=drone_trees
