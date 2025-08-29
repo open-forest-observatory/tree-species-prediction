@@ -33,6 +33,11 @@ LABEL_COLUMN_NAME = "unique_ID"
 VIS = True
 
 if __name__ == "__main__":
+    if not path_config.photogrammetry_folder.is_symlink():
+        # symlink from where argo produced the photogrammetry outputs to the working file tree
+        path_config.photogrammetry_folder.symlink_to(
+            path_config.photogrammetry_folder_argo
+        )
     photogrammetry_folders = path_config.photogrammetry_folder.glob("*")
 
     for photogrammetry_folder in photogrammetry_folders:

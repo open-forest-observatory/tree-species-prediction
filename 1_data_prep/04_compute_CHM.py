@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Optional, Union
-import sys
 
 import numpy as np
 import rioxarray
@@ -81,6 +80,11 @@ def compute_CHM(
 
 
 if __name__ == "__main__":
+    if not path_config.photogrammetry_folder.is_symlink():
+        # symlink from where argo produced the photogrammetry outputs to the working file tree
+        path_config.photogrammetry_folder.symlink_to(
+            path_config.photogrammetry_folder_argo
+        )
     # List all the folders, corresponding to photogrammetry for a nadir-oblique pair
     photogrammetry_run_folders = path_config.photogrammetry_folder.glob("*_*")
     # Iterate over the folders
