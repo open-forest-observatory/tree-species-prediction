@@ -186,27 +186,18 @@ def align_plot(field_trees, drone_trees, height_column="height", vis=False):
     # Ensure that drone trees are in the same CRS
     drone_trees.to_crs(field_trees.crs, inplace=True)
 
-    if not field_trees[height_column].isna().all():
-        drone_trees_subset = drone_trees[drone_trees[height_column] > 10]
-        field_trees_subset = field_trees[field_trees[height_column] > 10]
-        if len(drone_trees_subset) == 0 or len(field_trees_subset) == 0:
-            breakpoint()
-    else:
-        drone_trees_subset = drone_trees
-        field_trees_subset = field_trees
-
     # First compute a rough shift and then a fine one
     coarse_shift = find_best_shift(
-        field_trees=field_trees_subset,
-        drone_trees=drone_trees_subset,
+        field_trees=field_trees,
+        drone_trees=drone_trees,
         search_increment=1,
         search_window=10,
         vis=False,
     )
     # This is initialized from the coarse shift
     fine_shift = find_best_shift(
-        field_trees=field_trees_subset,
-        drone_trees=drone_trees_subset,
+        field_trees=field_trees,
+        drone_trees=drone_trees,
         search_window=2,
         search_increment=0.2,
         base_shift=coarse_shift,
