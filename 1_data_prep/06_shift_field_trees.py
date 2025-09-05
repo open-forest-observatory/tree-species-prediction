@@ -42,36 +42,52 @@ def cdist(x, y):
     return pairwise_distances
 
 
-def filter_to_overstory(tree_dataset):
+def is_overstory(tree_dataset: gpd.GeoDataFrame):
+    """
+    Compute which trees are in the overstory based on heights and locations
+    https://github.com/open-forest-observatory/ofo-itd-crossmapping/blob/1c35bb20f31013527c35bc56ab7bf5ef5ab1aa72/workflow/30_evaluate-predicted-trees.R#L90
+
+    Args:
+        tree_dataset (gpd.GeoDataFrame): The trees represented as points with a height column
+
+    Returns:
+        np.array: binary array representing which trees are overstory
+    """
     heights = tree_dataset.height.values
+
+    # If no trees are present, return an empty index
+    if len(tree_dataset) == 0:
+        return np.array([], dtype=bool)
 
     # Ensure that we have a meters-based projected CRS
     tree_dataset = ensure_projected_CRS(tree_dataset)
 
-    # Compute the difference in heights between different trees. This is the i axis minus the one on
-    # the j axis
-    height_diffs = heights[:, None] - heights[None, :]
+    # Compute the difference in heights between different trees. This is the j axis minus the one on
+    # the i axis
+    height_diffs = heights[np.newaxis, :] - heights[:, np.newaxis]
 
     # Get a numpy array of coordinates
     tree_points = shapely.get_coordinates(tree_dataset.geometry)
+
     # Compute the distances between each tree
     dists = cdist(tree_points, tree_points)
-    # Compute the threshold distance for tree
 
-    dist_treshold = height_diffs * 0.1 + 1
+    # Compute the threshold distance for tree based on the difference in height
+    dist_threshold = height_diffs * 0.1 + 1
 
     # Is the tree on the i axis within the threshold distance
-    is_within_threshold = dists < dist_treshold
+    is_within_threshold = dists < dist_threshold
 
     # Is the tree on the i axis shorter than the one on the j axis
-    is_shorter = height_diffs < 0
+    is_shorter = height_diffs > 0
 
     # Are both conditions met
     shorter_and_under_threshold = np.logical_and(is_within_threshold, is_shorter)
 
-    # Is the tree occluded by any others
-    is_understory = np.any(shorter_and_under_threshold, axis=1)
-    print(is_understory)
+    # Is the tree not occluded by any other trees
+    is_overstory = np.logical_not(np.any(shorter_and_under_threshold, axis=1))
+
+    return is_overstory
 
 
 def find_best_shift(
@@ -185,7 +201,7 @@ def align_plot(field_trees, drone_trees, height_column="height", vis=False):
         drone_trees=drone_trees_subset,
         search_increment=1,
         search_window=10,
-        vis=True,
+        vis=False,
     )
     # This is initialized from the coarse shift
     fine_shift = find_best_shift(
@@ -251,11 +267,6 @@ if __name__ == "__main__":
         ground_reference_trees[nan_height].dbh.to_numpy()
     )
     ground_reference_trees.loc[nan_height, "height"] = allometric_height
-    plt.hist(ground_reference_trees.height.values, bins=20)
-    plt.show()
-    # Filter out trees that don't have a height above 10
-    # breakpoint()
-    # ground_reference_trees = ground_reference_trees[ground_reference_trees.height > 10]
 
     shifts_per_dataset = {}
 
@@ -289,11 +300,16 @@ if __name__ == "__main__":
 
         field_trees = ground_reference_trees.query("@plot_ID == plot_id")
 
-        filter_to_overstory(field_trees)
+        # Compute which trees are overstory
+        overstory = is_overstory(field_trees)
+
+        # Subset to only overstory trees
+        field_trees = field_trees[overstory]
 
         if len(field_trees) < 5:
             print(f"Fewer than 5 field trees for plot_ID {plot_ID}. Skipping.")
             continue
+
         # Compute the shift between the field and drone trees
         shifted_field_trees, final_shift = align_plot(
             field_trees=field_trees, drone_trees=drone_trees
