@@ -14,11 +14,12 @@ import _bootstrap
 from configs.path_config import path_config
 
 # The image is downsampled to this fraction for accelerated rendering
-RENDER_IMAGE_SCALE = 0.1
+# Temporarily fixed to 1 since distortion modeling doesn't yet work on scaled images
+RENDER_IMAGE_SCALE = 1
 # Portions of the mesh within this distance of the labels are used for rendering
-MESH_BUFFER_RADIUS_METER = 20
+MESH_BUFFER_RADIUS_METER = 50
 # Cameras within this radius of the annotations are used for training
-CAMERAS_BUFFER_RADIUS_METERS = 20
+CAMERAS_BUFFER_RADIUS_METERS = 50
 # Downsample target
 DOWNSAMPLE_TARGET = 1
 # Set points under this height to ground
@@ -40,8 +41,14 @@ if __name__ == "__main__":
         )
     photogrammetry_folders = path_config.photogrammetry_folder.glob("*")
 
+    ground_reference_trees = gpd.read_file(path_config.ground_reference_trees_file)
+
     for photogrammetry_folder in photogrammetry_folders:
         dataset = photogrammetry_folder.parts[-1]
+        print("Dataset: ", dataset)
+        plot_ID = dataset[:4]
+        field_trees = ground_reference_trees.query("@plot_ID == plot_id")
+        field_trees = field_trees.reset_index(drop=True)
 
         # INPUTS
         # The input labels
@@ -66,6 +73,10 @@ if __name__ == "__main__":
         # Where to save the visualizations
         vis_output_folder = path_config.rendered_instance_ids_vis / dataset
 
+        if render_output_folder.exists() and any(render_output_folder.iterdir()):
+            print(f"Skipping {dataset} - renders already exist at {render_output_folder}")
+            continue
+
         if not labels_file.exists():
             print(f"Skipping {dataset} - vector file not found at {labels_file}")
             continue
@@ -82,6 +93,7 @@ if __name__ == "__main__":
                 render_savefolder=render_output_folder,
                 DTM_file=dtm_file,
                 ground_height_threshold=GROUND_HEIGHT_THRESHOLD,
+                ROI=field_trees,
                 cameras_ROI_buffer_radius_meters=CAMERAS_BUFFER_RADIUS_METERS,
                 mesh_ROI_buffer_radius_meters=MESH_BUFFER_RADIUS_METER,
                 render_image_scale=RENDER_IMAGE_SCALE,
