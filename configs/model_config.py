@@ -50,6 +50,7 @@ class TreeModelConfig:
     backbone_weight_decay: float = 5e-3         
     
     # model architecture
+    backbone_name: str = "vit_base_patch14_reg4_dinov2.lvd142m"
     n_intermediate_fc_layer_neurons: int = 1024 # size of fc layer between input of backbone and output logits of classification head
                                                 # set to 0 for no intermediate layer
 

@@ -3,6 +3,7 @@ import torchvision.transforms.functional as F
 from torchvision.transforms import InterpolationMode
 from functools import partial
 
+# TODO: combine these first two fns to only need to resize once. Note: conditional preprocess will also need to be updated
 def letterbox_to_square(img, target: int):
     w, h = img.size
     scale = target / max(w, h)
@@ -11,6 +12,7 @@ def letterbox_to_square(img, target: int):
     pad_w = target - new_w
     pad_h = target - new_h
     # pad equally: (left, top, right, bottom)
+    # TODO: have option to pad with avg color instead of just black 
     img = F.pad(img, [pad_w // 2, pad_h // 2, pad_w - pad_w // 2, pad_h - pad_h // 2], fill=0)
     return img
 

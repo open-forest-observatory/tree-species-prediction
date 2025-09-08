@@ -8,6 +8,8 @@ import os
 from tqdm import tqdm
 import itertools
 
+import time
+
 import _bootstrap
 from configs.path_config import path_config
 
@@ -16,8 +18,11 @@ from configs.path_config import path_config
 BBOX_PADDING_RATIO = 0.02           
 IMAGE_RES_CONSTRAINT = 250  # min edge length (height or width) to save
 
+# if using on all images (labelled and not labelled) -> set to False
+LABELLED_ONLY = True
+
 # rendered instance IDs (.tif) files
-tree_label_masks = path_config.rendered_instance_ids_path
+tree_label_mask_paths = path_config.rendered_instance_ids_path
 
 # raw images folder
 raw_imgs_path = path_config.raw_image_sets_folder
@@ -40,7 +45,7 @@ oblique2 = Path("oblique/000446/000446-01/00")
 
 # assemble list of dirs
 # ["0001_001435_001436", "0002_000451_000446", ...]
-dset_names = sorted(os.listdir(tree_label_masks))
+dset_names = sorted(os.listdir(tree_label_mask_paths))
 gdfs = {dset_name: gpd.read_file(Path(ground_data_path, dset_name+'.gpkg')) for dset_name in dset_names}
 
 # assemble list of tuples for the data paths
@@ -54,8 +59,8 @@ for dset_name in dset_names:
     dset_idx, nadir_id, oblique_id = dset_name.split("_")
 
     # get tif mask files from all the subdirs
-    nadir_base_path = Path(tree_label_masks, dset_tif, 'nadir', nadir_id)
-    oblique_base_path = Path(tree_label_masks, dset_tif, 'oblique', oblique_id)
+    nadir_base_path = Path(tree_label_mask_paths, dset_tif, 'nadir', nadir_id)
+    oblique_base_path = Path(tree_label_mask_paths, dset_tif, 'oblique', oblique_id)
 
     for flight_dir, flight_type in [(nadir_base_path, 'nadir'), (oblique_base_path, 'oblique')]:
         for subdir1 in os.listdir(flight_dir):
@@ -65,13 +70,8 @@ for dset_name in dset_names:
                     mask_fp = data_path / f # pull path of tif file
 
                     # take the tif mask file path and change parts to get the corresponding image path
-                    path_parts = mask_fp.parts
-                    # replace mask base bath with img base path
-                    split_idx = path_parts.index(tree_label_masks.parts[-1])
-                    after = list(path_parts[split_idx+1:])
-                    #after[0] = after[0].replace('_npy', '') # remove '_npy' in dset name for imgs
-                    after[-1] = mask_fp.stem + '.JPG' # replace '.tif' file ext with img file ext
-                    corr_img_path = Path(raw_imgs_path, *after) # rebuild img path
+                    rel_path = mask_fp.relative_to(tree_label_mask_paths)
+                    corr_img_path = raw_imgs_path / rel_path.with_suffix('.JPG')
 
                     if mask_fp.is_file() and corr_img_path.is_file():
                         src_info = {
@@ -84,13 +84,13 @@ for dset_name in dset_names:
                         missing_img_ctr += 1
 
 # should be 0
-print(f"Found {missing_img_ctr} mask files without corersponding image files")
+print(f"Found {missing_img_ctr} mask files without corresponding image files")
 
-pbar = tqdm(data_paths, unit="file")
+pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
 for src_info, mask_file_path, img_file_path in pbar:
-    pbar.set_description(src_info['dset_name'])
+    pbar.set_description(f"Cur plot: {src_info['dset_name']}")
     gdf = gdfs[src_info['dset_name']][['unique_ID', 'species_code']] # id and species cols of ground ref geodataframe
-    labelled_tree_ids = gdf[gdf.species_code.notnull()].unique_ID # for now only need labelled trees
+    labelled_tree_ids = gdf[gdf.species_code.notnull()].unique_ID # get trees with species label
     labelled_tree_ids = labelled_tree_ids.to_numpy(int)
 
     img = Image.open(img_file_path) # load image
@@ -100,11 +100,12 @@ for src_info, mask_file_path, img_file_path in pbar:
     mask_ids = tif.imread(mask_file_path) # load tif tree id mask
     mask_ids = np.squeeze(mask_ids) # (H, W, 1) -> (H, W)
     uids = np.unique(mask_ids) # get unique tree ids
-    uids = uids[np.isin(uids, labelled_tree_ids)] # will skip unlabelled trees
+
+    if LABELLED_ONLY:
+        uids = uids[np.isin(uids, labelled_tree_ids)]
 
     # iterate over ids
-    subpbar = tqdm(uids, unit='id')
-    for tree_id in subpbar:
+    for tree_id in uids:
         if np.isnan(tree_id): # skip nan values
             continue
 
@@ -127,7 +128,7 @@ for src_info, mask_file_path, img_file_path in pbar:
         # check for 'bad' crops
         # currently looks for low res images (h or w < 200 px), 
         # or crops near the edge of the images liable for distortion (any bbox edge <200px away from full img edge)
-        # may also try laplacian variance and/or tenengrad score
+        # TODO: also try laplacian variance and/or tenengrad score, as well as checking for low contrast
 
         # low res img
         # typically trees too far off in the distance
@@ -136,7 +137,8 @@ for src_info, mask_file_path, img_file_path in pbar:
 
         # check if image within safe radius to limit distortion effects
         crop_cx, crop_cy = (x0 + x1) / 2, (y0 + y1) / 2
-        if (img_cx - crop_cx) ** 2 + (img_cy - crop_cy) ** 2 > safe_radius ** 2:
+        diff = np.array([img_cx - crop_cx, img_cy - crop_cy])
+        if diff @ diff > safe_radius ** 2: # similar to euclidean norm but without sqrt -> faster
             continue
 
         # cropped near edge

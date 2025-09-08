@@ -26,7 +26,7 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
 
     # iterate through batches
     pbar = tqdm(dataloader, desc=pbar_msg)
-    for batch_idx, (imgs, labels, metadata) in enumerate(pbar):
+    for batch_idx, (imgs, labels, _) in enumerate(pbar):
         imgs = imgs.to(device, non_blocking=False)
         labels = labels.to(device, non_blocking=False)
         batch_size = labels.size(0)

@@ -21,6 +21,7 @@ def generate_params(**params):
     for combo in generate_params(reduction_ratio=[0.25, 0.5], warm_start_epoch=[100, 200]):
         ... do stuf with combo ...
     """
+    # TODO: Switch to sklearn.paramgrid
     keys, values = zip(*params.items()) if params else ([], [])
     for combo in product(*values):
         yield dict(zip(keys, combo))

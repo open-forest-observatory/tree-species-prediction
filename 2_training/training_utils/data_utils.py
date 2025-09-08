@@ -78,18 +78,6 @@ def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_s
 
     return train_idxs, val_idxs
 
-def summarize_mixed_label_trees(dset):
-    per_tree = defaultdict(list)
-    for m in dset.meta:
-        per_tree[m['unique_treeID']].append(m['label_idx'])
-    #mixed = {tid: Counter(lbls) for tid, lbls in per_tree.items() if len(set(lbls)) > 1}
-    mixed = {}
-    for tid, lbls in per_tree.items():
-        if len(set(lbls)) > 1: # if there's multiple diff labels for one tree
-            lbls_str = [dset.idx2label_map[lbl] for lbl in lbls]
-            mixed[tid] = Counter(lbls_str)
-    return mixed
-
 def stratified_split_by_ID(
     dset,
     val_ratio=0.2,
@@ -113,10 +101,6 @@ def stratified_split_by_ID(
         in val are as close as possible to `val_ratio * n_samples_in_class`.
       - Remaining trees go to train. Final shuffle keeps RNG reproducible.
     """
-    # debug, looks for trees with conflicting IDs
-    #mixed = summarize_mixed_label_trees(dset)
-    #print(mixed)
-
     rng = torch.Generator().manual_seed(seed)
     pool = list(range(len(dset))) if (sample_idxs_pool is None) else list(sample_idxs_pool)
 
