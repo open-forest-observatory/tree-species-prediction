@@ -1,11 +1,13 @@
 import torch
 from torch.utils.data import Subset, DataLoader
 import geopandas as gpd
+import pandas as pd
 import numpy as np
 from pathlib import Path
 from collections import defaultdict, Counter
 import copy
 
+from configs.path_config import path_config
 from configs.model_config import model_config
 from data.dataset import collate_batch
 
@@ -251,6 +253,54 @@ def stratified_split_by_ID(
 
     return train_idxs, val_idxs
 
+# TODO: implement the class balancing factors here that are in the other stratified split fns
+def stratified_split_by_plot(dset, per_class_sample_limit_factor=None, min_samples_per_class=None, suppress_summary_print=False):
+    split_df = pd.read_csv(path_config.train_test_split_file)
+    target_cols = ['plot_id', 'mission_id_hn', 'mission_id_lo'] # these cols contain the info to construct the indv gpkg file name
+
+    train_rows = split_df[split_df.split == 'train']
+    train_dset_names = train_rows.apply(lambda row: f"{int(row[target_cols[0]]):04d}_{int(row[target_cols[1]]):06d}_{int(row[target_cols[2]]):06d}", axis=1).tolist()
+
+    test_rows = split_df[split_df.split == 'test']
+    test_dset_names = test_rows.apply(lambda row: f"{int(row[target_cols[0]]):04d}_{int(row[target_cols[1]]):06d}_{int(row[target_cols[2]]):06d}", axis=1).tolist()
+
+    train_idxs, test_idxs, unknown = [], [], []
+    for i, meta_dict in enumerate(dset.meta):
+        img_src = meta_dict['dset']
+        if img_src in test_dset_names:
+            test_idxs.append(i)
+        elif img_src in train_dset_names:
+            train_idxs.append(i)
+        
+        else:
+            unknown.append(i)
+
+    print(f"****** {len(train_idxs)} - {len(test_idxs)}")
+
+    # ensure class coverage between plots
+    train_labels = {dset.meta[i]['label_idx'] for i in train_idxs}
+    test_labels = {dset.meta[i]['label_idx'] for i in test_idxs}
+
+    labels_only_in_train = sorted(train_labels - test_labels)
+    labels_only_in_test = sorted(test_labels - train_labels)
+    
+    print(f"[split_by_dataset_id] train imgs={len(train_idxs)}, test imgs={len(test_idxs)}, unknown dsets={len(unknown)}")
+    if labels_only_in_train:
+        print(f"Classes ONLY in TRAIN (absent in TEST): {labels_only_in_train}")
+    if labels_only_in_test:
+        print(f"Classes ONLY in TEST (absent in TRAIN): {labels_only_in_test}")
+    if unknown:
+        ex = sorted(set(unknown))[:5]
+        print(f"Warning: {len(unknown)} samples had dset names not found in the split CSV. Examples: {ex}")
+
+    # summary of train/val splits after stratified split and applying any min/max n_samples
+    if not suppress_summary_print:
+        summarize_split_by_tree(dset, train_idxs, name="train")
+        summarize_split_by_tree(dset, test_idxs,   name="val")
+        check_no_tree_overlap(dset, train_idxs, test_idxs)
+
+    return torch.tensor(train_idxs), torch.tensor(test_idxs)
+
 def summarize_split_by_tree(dset, idxs, name="split"):
     """
     Print, per class, the number of trees and images, plus per-tree count stats.
@@ -296,12 +346,18 @@ def check_no_tree_overlap(dset, train_idxs, val_idxs):
     else:
         print("OK: no tree overlap between TRAIN and VAL.")
 
-def assemble_dataloaders(tree_dset, train_transform, val_transform, return_idxs=False, idxs_pool=None):
+def assemble_dataloaders(tree_dset, train_transform, val_transform, split_method, return_idxs=False, idxs_pool=None):
     train_cp = copy.copy(tree_dset)
     val_cp = copy.copy(tree_dset)
 
+    split_methods = { # choose appropriate fn for splitting data based on model config arg
+        'plot': stratified_split_by_plot,
+        'tree': stratified_split_by_ID,
+        'image': stratified_split
+    }
+
     # train/val split evenly among each label
-    train_dset_idxs, val_dset_idxs = stratified_split_by_ID(
+    train_dset_idxs, val_dset_idxs = split_methods[split_method](
         tree_dset,
         per_class_sample_limit_factor=model_config.max_class_imbalance_factor,
         min_samples_per_class=model_config.min_samples_per_class

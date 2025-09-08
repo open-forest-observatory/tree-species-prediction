@@ -1,4 +1,5 @@
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
@@ -14,13 +15,15 @@ from training_utils.initializers import init_training
 from training_utils.step_epoch import _step_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, stratified_split
 from training_utils.visualization import confusion_matrix
-from torch.utils.tensorboard import SummaryWriter
 from training_utils.data_reduction_utils import gradsel_reduce, _is_subset_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, summarize_split_by_tree, check_no_tree_overlap
 
 ''' TODO:
 - context manager for safe exiting on training
 - plotting/visualizing of metrics and loss
+- tree level prediction
+    - when model trained, infer on model to get species for all cropped imgs of each tree,
+    and take majority vote on which species predicted most
 '''
 
 def train():
@@ -85,7 +88,7 @@ def train():
             )
 
             # Compute confusion matrix for validation set
-            matrix_fig = confusion_matrix(unique_species_labels, val_loader, tree_model, device)
+            matrix_fig = confusion_matrix(unique_species_labels, val_loader, tree_model, device, exclude_empty=True)
             tb_writer.add_figure("Val Confusion Matrix", matrix_fig, epoch + 1)
             plt.close(matrix_fig)
 
@@ -120,7 +123,7 @@ def train():
             prev_subset_idxs = chosen_idxs_pool
 
         # save ckpt for future analysis
-        ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1']:.4f}-.pt"
+        ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1']:.4f}.pt"
         log_path = ckpt_path.parent / f"{ckpt_path.stem}.json"
         torch.save({
             'epoch': epoch + 1,

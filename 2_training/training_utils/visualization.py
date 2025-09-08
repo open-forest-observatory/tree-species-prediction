@@ -2,9 +2,10 @@ from torchmetrics import ConfusionMatrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
+import numpy as np
 
 
-def confusion_matrix(unique_class_labels, dataloader, model, device):
+def confusion_matrix(unique_class_labels, dataloader, model, device, exclude_empty=False):
     """Create a confusion matrix of ground truth labels vs predicted labels for all classes."""
     confmat = ConfusionMatrix(task="multiclass", num_classes=len(unique_class_labels)).to(device)
 
@@ -21,6 +22,13 @@ def confusion_matrix(unique_class_labels, dataloader, model, device):
     all_targets = torch.cat(all_targets)
 
     cm = confmat(all_preds, all_targets).cpu().numpy()
+
+    # optionally remove rows/cols with no entries
+    # typically if classes are excluded in training but loaded in the full dataset
+    if exclude_empty: 
+        mask = ~(cm.sum(axis=0) == 0) & ~(cm.sum(axis=1) == 0)
+        cm = cm[np.ix_(mask, mask)]
+        unique_class_labels = [lbl for lbl, keep in zip(unique_class_labels, mask) if keep]
 
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=unique_class_labels, yticklabels=unique_class_labels, ax=ax)

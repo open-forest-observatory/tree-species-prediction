@@ -41,7 +41,7 @@ def assemble_param_groups(tree_model):
         # determine group from above dict keys -> head_ or backbone_ + decay or nodecay
         group_key = ('backbone_' if is_backbone else 'head_') + ('decay' if decay else 'nodecay')
         groups[group_key]['params'].append(param)
-        groups[group_key]['names'].append(param)
+        groups[group_key]['names'].append(name)
 
     return list(groups.values()), groups
 
@@ -70,7 +70,7 @@ def init_training():
         std=tree_model.backbone_data_cfg['std']
     )
 
-    train_loader, val_loader = assemble_dataloaders(tree_dset, train_transform, val_transform, return_idxs=False, idxs_pool=None)
+    train_loader, val_loader = assemble_dataloaders(tree_dset, train_transform, val_transform, model_config.data_split_level, return_idxs=False, idxs_pool=None)
 
     # controls early stopping of training if performance plateaus
     # disabled if model_config.patience == 0

@@ -43,6 +43,7 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
                 # scale back to fp32 and then backprop
                 scaler.scale(loss).backward()
                 scaler.step(optim) # step down the gradient
+                scaler.update()
             else:
                 loss.backward() # back propagation
                 optim.step() # step down the gradient

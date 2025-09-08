@@ -69,6 +69,8 @@ class TreeDataset(Dataset):
             self.gpkg_dir = Path(gpkg_dir)
             self.gpkg_LUT = self._build_gpkg_lookup_tables() # dset_path : {tree_id (str): gpkg_row_idx}
             #print(self.gpkg_LUT)
+            #debug
+            problem_dsets = problem_tree_ids = set() 
             for meta_dict in self.meta:
                 tree_id_str = str(meta_dict['treeID'])
                 gpkg_fp = gpkg_dir / f"{meta_dict['dset']}.gpkg"
@@ -76,14 +78,13 @@ class TreeDataset(Dataset):
                     raise FileNotFoundError(f"Could not find: {gpkg_fp}")
                 
                 # TODO: Sometimes can't find the row index, says key error with some tree_id_strs
+                # waiting for data prep work earlier in pipeline to rerun cropped trees and then this should be fine
                 try:
                     meta_dict['gpkg_row_idx'] = self.gpkg_LUT[meta_dict['dset']][tree_id_str]
-                except:
-                    pass
-                    #print(meta_dict['dset'], tree_id_str)
-
-
-        
+                except KeyError:
+                    problem_dsets.add(meta_dict['dset'])
+                    problem_tree_ids.add(tree_id_str)
+            print(f"{len(problem_tree_ids)} Trees unable to be located in gpkg data files out of {len(set([m['unique_treeID'] for m in self.meta]))} total unique trees.\nTraining proceed as normal, but gpkg rows unable to be referenced")
 
         self.transform = (
             transform if transform is not None
