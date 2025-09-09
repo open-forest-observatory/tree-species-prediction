@@ -33,6 +33,7 @@ torchmetrics = "^1.8.1"
 matplotlib = "^3.10.5"
 seaborn = "^0.13.2"
 ipykernel = "^6.30.1"
+scipy = "<1.16"
 
 [[tool.poetry.source]]
 name = "pytorch-cuda"
