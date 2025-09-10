@@ -259,6 +259,10 @@ if __name__ == "__main__":
     )
     ground_reference_trees.loc[nan_height, "height"] = allometric_height
 
+    # Filter out any trees that still don't have height (just 1 in current experiments)
+    ground_reference_trees = ground_reference_trees[
+        ~ground_reference_trees.height.isna()
+    ]
     shifts_per_dataset = {}
 
     # Iterate over detected trees
