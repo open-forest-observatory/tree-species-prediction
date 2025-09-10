@@ -56,7 +56,7 @@ def init_training():
     # init classifier
     tree_model = TreeSpeciesClassifierFromPretrained(
         path_config.pretrained_model_path, # plant clef 2024, 'only_classifier_then_all' -> fine tuned backbone
-        backbone_name=path_config.backbone_name,
+        backbone_name=model_config.backbone_name,
         num_classes=len(tree_dset.label2idx_map),
         backbone_is_trainable=False, # with already tuned backbone, we won't touch it at least to start (can further tune in later epochs)
     ).to(device)
