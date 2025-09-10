@@ -30,6 +30,54 @@ def get_classes_from_gpd_file_paths(paths):
 
     return sorted(species)
 
+def oversample_rare_classes(dset, train_idxs, min_samples_per_class=None):
+    """
+    Simple oversampling: duplicate samples from rare classes until they reach min_samples_per_class.
+    
+    Args:
+        dset: TreeDataset
+        train_idxs: tensor/list of training indices
+        min_samples_per_class: minimum samples per class (use model_config value)
+    
+    Returns:
+        oversampled_train_idxs: tensor with duplicated indices for rare classes
+    """
+    if min_samples_per_class is None or min_samples_per_class <= 0:
+        return train_idxs
+    
+    train_idxs = train_idxs.tolist() if hasattr(train_idxs, 'tolist') else list(train_idxs)
+    
+    # Count samples per class in training set
+    train_labels = [dset.meta[i]['label_idx'] for i in train_idxs]
+    class_counts = {}
+    class_indices = {}
+    
+    for idx, label in zip(train_idxs, train_labels):
+        if label not in class_counts:
+            class_counts[label] = 0
+            class_indices[label] = []
+        class_counts[label] += 1
+        class_indices[label].append(idx)
+    
+    # Oversample rare classes
+    oversampled_idxs = train_idxs.copy()
+    
+    for class_label, count in class_counts.items():
+        if count < min_samples_per_class:
+            needed = min_samples_per_class - count
+            class_samples = class_indices[class_label]
+            
+            # Cycle through existing samples to reach target
+            for i in range(needed):
+                duplicate_idx = class_samples[i % len(class_samples)]
+                oversampled_idxs.append(duplicate_idx)
+            
+            species_name = dset.idx2label_map[class_label]
+            print(f"Oversampled {species_name}: {count} -> {min_samples_per_class} samples")
+    
+    return torch.tensor(oversampled_idxs)
+
+
 def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_samples_per_class=0, seed=-1):
     """
     Returns (train_subset, val_subset) with class-balanced split.
@@ -346,6 +394,12 @@ def assemble_dataloaders(tree_dset, train_transform, val_transform, split_method
         per_class_sample_limit_factor=model_config.max_class_imbalance_factor,
         min_samples_per_class=model_config.min_samples_per_class
     ) 
+
+    train_dset_idxs = oversample_rare_classes(
+        tree_dset, 
+        train_dset_idxs, 
+        min_samples_per_class=model_config.min_samples_per_class
+    )
 
     # swap default transform of dataset class with the ones just built
     train_cp.transform = train_transform
