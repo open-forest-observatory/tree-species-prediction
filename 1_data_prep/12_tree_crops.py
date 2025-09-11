@@ -63,25 +63,29 @@ for dset_name in dset_names:
     oblique_base_path = Path(tree_label_mask_paths, dset_tif, 'oblique', oblique_id)
 
     for flight_dir, flight_type in [(nadir_base_path, 'nadir'), (oblique_base_path, 'oblique')]:
-        for subdir1 in os.listdir(flight_dir):
-            for subdir2 in os.listdir(flight_dir / subdir1):
-                data_path = flight_dir / subdir1 / subdir2
-                for f in os.listdir(data_path):
-                    mask_fp = data_path / f # pull path of tif file
+        try:
+            for subdir1 in os.listdir(flight_dir):
+                for subdir2 in os.listdir(flight_dir / subdir1):
+                    data_path = flight_dir / subdir1 / subdir2
+                    for f in os.listdir(data_path):
+                        mask_fp = data_path / f # pull path of tif file
 
-                    # take the tif mask file path and change parts to get the corresponding image path
-                    rel_path = mask_fp.relative_to(tree_label_mask_paths)
-                    corr_img_path = raw_imgs_path / rel_path.with_suffix('.JPG')
+                        # take the tif mask file path and change parts to get the corresponding image path
+                        rel_path = mask_fp.relative_to(tree_label_mask_paths)
+                        corr_img_path = raw_imgs_path / rel_path.with_suffix('.JPG')
 
-                    if mask_fp.is_file() and corr_img_path.is_file():
-                        src_info = {
-                            'dset_name': dset_name,
-                            'flight_type': flight_type,
-                        }
-                        data_paths.append((src_info, mask_fp, corr_img_path))
-                    else:
-                        print(f"WARNING: mask file: {mask_fp} has no corresponding image file")
-                        missing_img_ctr += 1
+                        if mask_fp.is_file() and corr_img_path.is_file():
+                            src_info = {
+                                'dset_name': dset_name,
+                                'flight_type': flight_type,
+                            }
+                            data_paths.append((src_info, mask_fp, corr_img_path))
+                        else:
+                            print(f"WARNING: mask file: {mask_fp} has no corresponding image file")
+                            missing_img_ctr += 1
+        except FileNotFoundError as fne:
+            print(f"WARNING: Missing label directory {flight_dir}")
+            continue
 
 # should be 0
 print(f"Found {missing_img_ctr} mask files without corresponding image files")
@@ -119,8 +123,8 @@ for src_info, mask_file_path, img_file_path in pbar:
         except Exception as e:
             species_code = gdf.loc[gdf['unique_ID'] == tree_id_str, 'species_code']
 
-        species_file_label = 'NONE' if species_code is None else species_code
-        species_dir_label = 'unlabelled' if species_code is None else 'labelled'
+        species_file_label = 'NONE' if (species_code is None or species_code.empty) else species_code
+        species_dir_label = 'unlabelled' if (species_code is None or species_code.empty) else 'labelled'
 
         ys, xs = np.where(mask_ids == tree_id) # gather all pixels of current tree
         y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max() # current tree img bounds

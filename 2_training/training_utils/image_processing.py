@@ -25,33 +25,20 @@ def downsample_long_side_if_needed(img, long_side_thresh: int, downsample_to: in
     new_w, new_h = int(round(w * scale)), int(round(h * scale))
     return F.resize(img, [new_h, new_w], interpolation=InterpolationMode.BICUBIC, antialias=True)
 
-def conditional_preprocess(
+def static_preprocess(
     img,
-    is_training: bool,
     target: int,
     long_side_thresh: int,
     downsample_to: int,
 ):
+    # if extremely large, downsample first to control compute/encode
     w, h = img.size
     long_side = max(w, h)
-
     if long_side > long_side_thresh:
-        # keep field-of-view, control token count
         img = downsample_long_side_if_needed(img, long_side_thresh, downsample_to)
-        img = letterbox_to_square(img, target)
-    else:
-        # smaller images: crop for focus/aug (train) or deterministic center crop (val)
-        if is_training:
-            img = T.RandomResizedCrop(
-                (target, target), scale=(0.85, 1.0),
-                interpolation=InterpolationMode.BICUBIC, antialias=True
-            )(img)
-            img = T.RandomHorizontalFlip()(img)
-        else:
-            if min(w, h) >= target:
-                img = F.center_crop(img, (target, target))
-            else:
-                img = letterbox_to_square(img, target)
+
+    # Always letterbox to a square of `target` once (avoids later re-resizes)
+    img = letterbox_to_square(img, target)
     return img
 
 def build_transforms(
@@ -61,28 +48,27 @@ def build_transforms(
     mean,               # stats of backbone training data for normalizing
     std,
 ):
-    preprocess_train = partial(
-        conditional_preprocess,
-        is_training=True,
-        target=target,
-        long_side_thresh=long_side_thresh,
-        downsample_to=downsample_to,
-    )
-    preprocess_eval = partial(
-        conditional_preprocess,
-        is_training=False,
-        target=target,
-        long_side_thresh=long_side_thresh,
-        downsample_to=downsample_to,
-    )
-    train_transform = T.Compose([
-        T.Lambda(preprocess_train),
+    # static deterministic transforms for resizing to input dim
+    static_tf = T.Lambda(lambda im: static_preprocess(
+        im, target=target, long_side_thresh=long_side_thresh, downsample_to=downsample_to
+    ))
+
+    # random train -> stochastic augs that preserve size, then tensor+norm
+    random_train_tf = T.Compose([
+        T.RandomResizedCrop(
+            (target, target), scale=(0.85, 1.0),
+            interpolation=InterpolationMode.BICUBIC, antialias=True
+        ),
+        T.RandomHorizontalFlip(0.15),
+        T.ColorJitter(0.1, 0.1, 0.1, 0.0),
         T.ToTensor(),
         T.Normalize(mean=mean, std=std),
     ])
-    eval_transform = T.Compose([
-        T.Lambda(preprocess_eval),
+
+    # random eval -> deterministic finishing only
+    random_eval_tf = T.Compose([
         T.ToTensor(),
         T.Normalize(mean=mean, std=std),
     ])
-    return train_transform, eval_transform
+
+    return static_tf, random_train_tf, random_eval_tf
