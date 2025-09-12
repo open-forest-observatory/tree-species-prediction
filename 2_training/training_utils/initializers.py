@@ -50,7 +50,8 @@ def init_training():
 
     tree_dset = TreeDataset( # init dataset
         imgs_root=path_config.cropped_tree_training_images / 'labelled',
-        gpkg_dir=path_config.drone_crowns_with_field_attributes
+        gpkg_dir=path_config.drone_crowns_with_field_attributes,
+        cache_dir=path_config.static_transformed_images_cache_dir,
     )
     
     # init classifier
@@ -62,7 +63,7 @@ def init_training():
     ).to(device)
 
     # img transforms to give to dataset class to standardize input imgs to the model's liking
-    train_transform, val_transform = build_transforms(
+    static_T, random_train_T, random_val_T = build_transforms(
         target=model_config.input_img_dim[0],
         long_side_thresh=model_config.downsample_threshold,
         downsample_to=model_config.downsample_to,
@@ -70,7 +71,7 @@ def init_training():
         std=tree_model.backbone_data_cfg['std']
     )
 
-    train_loader, val_loader = assemble_dataloaders(tree_dset, train_transform, val_transform, model_config.data_split_level, return_idxs=False, idxs_pool=None)
+    train_loader, val_loader = assemble_dataloaders(tree_dset, static_T, random_train_T, random_val_T, model_config.data_split_level, return_idxs=False, idxs_pool=None)
 
     # controls early stopping of training if performance plateaus
     # disabled if model_config.patience == 0
@@ -107,5 +108,5 @@ def init_training():
         # use just cosine annealing if no warmup
         scheduler = CosineAnnealingLR(optim, T_max=model_config.epochs)
 
-    return tree_model, tree_dset, train_loader, val_loader, train_transform, val_transform, \
+    return tree_model, tree_dset, train_loader, val_loader, static_T, random_train_T, random_val_T, \
     optim, criterion, scheduler, scaler, device, early_stopper

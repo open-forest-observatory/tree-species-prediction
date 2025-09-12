@@ -378,7 +378,7 @@ def check_no_tree_overlap(dset, train_idxs, val_idxs):
     else:
         print("OK: no tree overlap between TRAIN and VAL.")
 
-def assemble_dataloaders(tree_dset, train_transform, val_transform, split_method, return_idxs=False, idxs_pool=None):
+def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, return_idxs=False, idxs_pool=None):
     train_cp = copy.copy(tree_dset)
     val_cp = copy.copy(tree_dset)
 
@@ -402,8 +402,10 @@ def assemble_dataloaders(tree_dset, train_transform, val_transform, split_method
     )
 
     # swap default transform of dataset class with the ones just built
-    train_cp.transform = train_transform
-    val_cp.transform = val_transform
+    train_cp.static_transform = static_T
+    train_cp.random_transform = train_T
+    val_cp.static_transform = static_T
+    val_cp.random_transform = val_T
 
     train_dset = Subset(train_cp, train_dset_idxs)
     val_dset = Subset(val_cp, val_dset_idxs)

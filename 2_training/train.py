@@ -33,7 +33,7 @@ def train():
     unique_species_labels = get_classes_from_gpd_file_paths(gpkg_dsets)
 
     # init everything required for model training
-    tree_model, tree_dset, train_loader, val_loader, train_transform, val_transform, \
+    tree_model, tree_dset, train_loader, val_loader, static_transform, train_transform, val_transform, \
     optim, criterion, scheduler, scaler, device, early_stopper = init_training()
 
     # for data reduction
@@ -111,6 +111,7 @@ def train():
                 base_dataset=full_dset_val_transform,
                 criterion=criterion,
                 epoch_idx=epoch,
+                static_transform=static_transform,
                 train_transform=train_transform,
                 val_transform=val_transform,
                 reduction_ratio=dr_config.subset_ratio,
