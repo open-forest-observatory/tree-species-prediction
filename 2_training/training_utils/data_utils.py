@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import Subset, DataLoader, WeightedRandomSampler
 import geopandas as gpd
 import pandas as pd
 import numpy as np
@@ -29,54 +29,6 @@ def get_classes_from_gpd_file_paths(paths):
         species.update(list(gdf_species.unique()))
 
     return sorted(species)
-
-def oversample_rare_classes(dset, train_idxs, min_samples_per_class=None):
-    """
-    Simple oversampling: duplicate samples from rare classes until they reach min_samples_per_class.
-    
-    Args:
-        dset: TreeDataset
-        train_idxs: tensor/list of training indices
-        min_samples_per_class: minimum samples per class (use model_config value)
-    
-    Returns:
-        oversampled_train_idxs: tensor with duplicated indices for rare classes
-    """
-    if min_samples_per_class is None or min_samples_per_class <= 0:
-        return train_idxs
-    
-    train_idxs = train_idxs.tolist() if hasattr(train_idxs, 'tolist') else list(train_idxs)
-    
-    # Count samples per class in training set
-    train_labels = [dset.meta[i]['label_idx'] for i in train_idxs]
-    class_counts = {}
-    class_indices = {}
-    
-    for idx, label in zip(train_idxs, train_labels):
-        if label not in class_counts:
-            class_counts[label] = 0
-            class_indices[label] = []
-        class_counts[label] += 1
-        class_indices[label].append(idx)
-    
-    # Oversample rare classes
-    oversampled_idxs = train_idxs.copy()
-    
-    for class_label, count in class_counts.items():
-        if count < min_samples_per_class:
-            needed = min_samples_per_class - count
-            class_samples = class_indices[class_label]
-            
-            # Cycle through existing samples to reach target
-            for i in range(needed):
-                duplicate_idx = class_samples[i % len(class_samples)]
-                oversampled_idxs.append(duplicate_idx)
-            
-            species_name = dset.idx2label_map[class_label]
-            print(f"Oversampled {species_name}: {count} -> {min_samples_per_class} samples")
-    
-    return torch.tensor(oversampled_idxs)
-
 
 def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_samples_per_class=0, seed=-1):
     """
@@ -395,12 +347,6 @@ def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, retu
         min_samples_per_class=model_config.min_samples_per_class
     ) 
 
-    train_dset_idxs = oversample_rare_classes(
-        tree_dset, 
-        train_dset_idxs, 
-        min_samples_per_class=model_config.min_samples_per_class
-    )
-
     # swap default transform of dataset class with the ones just built
     train_cp.static_transform = static_T
     train_cp.random_transform = train_T
@@ -410,14 +356,39 @@ def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, retu
     train_dset = Subset(train_cp, train_dset_idxs)
     val_dset = Subset(val_cp, val_dset_idxs)
 
-    train_loader = DataLoader(
-        train_dset,
-        batch_size=model_config.batch_size,
-        shuffle=True,
-        num_workers=model_config.num_workers,
-        pin_memory=True,
-        collate_fn=collate_batch
-    )
+    if model_config.use_class_balancing:
+        # get labels of training subset
+        print("Using class balancing...")
+        train_labels = [tree_dset.meta[i]["label_idx"] for i in train_dset_idxs]
+
+        # compute weights (inverse class frequency)
+        class_counts = np.bincount(train_labels)
+        class_weights = 1.0 / (class_counts + 1e-6)
+        sample_weights = [class_weights[label] for label in train_labels]
+
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True
+        )
+
+        train_loader = DataLoader(
+            train_dset,
+            batch_size=model_config.batch_size,
+            sampler=sampler,
+            num_workers=model_config.num_workers,
+            pin_memory=True,
+            collate_fn=collate_batch
+        )
+    else:
+        train_loader = DataLoader(
+            train_dset,
+            batch_size=model_config.batch_size,
+            shuffle=True,
+            num_workers=model_config.num_workers,
+            pin_memory=True,
+            collate_fn=collate_batch
+        )
 
     val_loader = DataLoader(
         val_dset,
