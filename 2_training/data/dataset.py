@@ -132,12 +132,13 @@ class TreeDataset(Dataset):
 
     def get_img_paths_from_root(self):
         img_paths = []
-        for path in self.imgs_root.rglob('*'):
-            if "0066_001468_001469" in str(path):  # Needs to be removed later
-                continue
-            if path.suffix.lower() in self.img_exts:
-                img_paths.append(path)
-        
+        root = Path(self.imgs_root)
+
+        for dirpath, _, filenames in os.walk(root, followlinks=True):
+            for fname in filenames:
+                if Path(fname).suffix.lower() in self.img_exts:
+                    img_paths.append(Path(dirpath) / fname)
+
         return img_paths
 
     def parse_file_names(self):
