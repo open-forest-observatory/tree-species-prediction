@@ -48,7 +48,7 @@ oblique2 = Path("oblique/000446/000446-01/00")
 # assemble list of dirs
 # ["0001_001435_001436", "0002_000451_000446", ...]
 dset_names = sorted(os.listdir(tree_label_mask_paths))
-gdfs = {dset_name: gpd.read_file(Path(ground_data_path, dset_name+'.gpkg')) for dset_name in dset_names}
+dset_gt_mapping = {dset_name: gpd.read_file(Path(ground_data_path, dset_name+'.gpkg')) for dset_name in dset_names}
 
 # assemble list of tuples for the data paths
 # each item in the list will be (src_info, mask_fp, img_path)
@@ -80,26 +80,21 @@ for dset_name in dset_names:
 
     for flight_dir, flight_type in [(nadir_base_path, 'nadir'), (oblique_base_path, 'oblique')]:
         try:
-            for subdir1 in os.listdir(flight_dir):
-                for subdir2 in os.listdir(flight_dir / subdir1):
-                    data_path = flight_dir / subdir1 / subdir2
-                    for f in os.listdir(data_path):
-                        mask_fp = data_path / f # pull path of tif file
+            for mask_fp in flight_dir.rglob("*.tif"):
+                # take the tif mask file path and change parts to get the corresponding image path
+                rel_path = mask_fp.relative_to(tree_label_mask_paths)
+                corr_img_path = raw_imgs_path / rel_path.with_suffix('.JPG')
 
-                        # take the tif mask file path and change parts to get the corresponding image path
-                        rel_path = mask_fp.relative_to(tree_label_mask_paths)
-                        corr_img_path = raw_imgs_path / rel_path.with_suffix('.JPG')
-
-                        if mask_fp.is_file() and corr_img_path.is_file():
-                            src_info = {
-                                'dset_name': dset_name,
-                                'flight_type': flight_type,
-                                'IDs_to_labels_path': nadir_base_path.parent.parent / "IDs_to_labels.json"
-                            }
-                            data_paths.append((src_info, mask_fp, corr_img_path))
-                        else:
-                            print(f"WARNING: mask file: {mask_fp} has no corresponding image file")
-                            missing_img_ctr += 1
+                if mask_fp.is_file() and corr_img_path.is_file():
+                    src_info = {
+                        'dset_name': dset_name,
+                        'flight_type': flight_type,
+                        'IDs_to_labels_path': nadir_base_path.parents[1] / "IDs_to_labels.json"
+                    }
+                    data_paths.append((src_info, mask_fp, corr_img_path))
+                else:
+                    print(f"WARNING: mask file: {mask_fp} has no corresponding image file")
+                    missing_img_ctr += 1
         except FileNotFoundError as fne:
             print(f"WARNING: Missing label directory {flight_dir}")
             continue
@@ -112,8 +107,8 @@ if skipped_datasets:
 pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
 for src_info, mask_file_path, img_file_path in pbar:
     pbar.set_description(f"Cur plot: {src_info['dset_name']}")
-    gdf = gdfs[src_info['dset_name']][['unique_ID', 'species_code']] # id and species cols of ground ref geodataframe
-    labelled_tree_ids = gdf[gdf.species_code.notnull()].unique_ID # get trees with species label
+    plot_attributes = dset_gt_mapping[src_info['dset_name']][['unique_ID', 'species_code']] # id and species cols of ground ref geodataframe
+    labelled_tree_ids = plot_attributes[plot_attributes.species_code.notnull()].unique_ID # get trees with species label
     labelled_tree_ids = labelled_tree_ids.to_numpy(int)
 
     img = Image.open(img_file_path) # load image
@@ -143,12 +138,12 @@ for src_info, mask_file_path, img_file_path in pbar:
         # map mask value -> tree unique ID
         tree_unique_id = ID_mapping.get(int(tree_mask_value))
         if tree_unique_id is None:
-            continue
+            raise ValueError(f"Tree unique_ID for mask value {tree_mask_value} is None. Check {IDs_to_labels_path}")
 
-        tree_unique_id = str(int(tree_unique_id)).zfill(5) # convert tree uid to 0 padded str to match gdf format
+        tree_unique_id = str(int(tree_unique_id)).zfill(5) # convert tree uid to 0 padded str to match plot_attributes format
 
         # see if this tree has a species label
-        species_val = gdf.loc[gdf['unique_ID'] == tree_unique_id, 'species_code']
+        species_val = plot_attributes.loc[plot_attributes['unique_ID'] == tree_unique_id, 'species_code']
         if len(species_val) == 0:
             species_code = None
         else:
