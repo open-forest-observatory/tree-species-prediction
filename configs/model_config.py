@@ -32,13 +32,15 @@ class TreeModelConfig:
     num_workers: int = 8                        # workers for the dataloader
     max_class_imbalance_factor: float = 0      # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
-    min_samples_per_class: int = 500            # 0 -> no limit; exclude classes with fewer than this num samples
+    min_samples_per_class: int = 0            # 0 -> no limit; exclude classes with fewer than this num samples
+    rare_class_size_threshold = 500
+    use_class_balancing: bool = True            # use weighted random sampler to balance classes during training
     # determines how to split data into train/test
     # caution with plot level split -> currently no datasets marked as 'test' have been processed by steps prior to this training
-    data_split_level: Literal['plot', 'tree', 'image'] = 'tree'
+    data_split_level: Literal['plot', 'tree', 'image'] = 'plot'
     
     # epoch loop iterations
-    epochs: int = 25                            # num passes through the training dataset
+    epochs: int = 10                            # num passes through the training dataset
     warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
     freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
     batch_size: int = 16                         # how many images processed per backprop/param update
@@ -71,7 +73,7 @@ class TreeModelConfig:
 
     # misc
     seed: int = 24                              # seed to maintain reproducibility within rng
-    ckpt_dir_tag: str = ''                      # ckpt dirs are just date and time, use this for a more helpful training identifier
+    ckpt_dir_tag: str = '92dsets-plot-rare-aug'                      # ckpt dirs are just date and time, use this for a more helpful training identifier
 
 
 model_config, model_args = parse_config_args(TreeModelConfig)
