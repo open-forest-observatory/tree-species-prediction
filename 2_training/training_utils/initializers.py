@@ -52,7 +52,6 @@ def init_training():
         imgs_root=path_config.cropped_tree_training_images / 'labelled',
         gpkg_dir=path_config.drone_crowns_with_field_attributes,
         cache_dir=path_config.static_transformed_images_cache_dir,
-        rare_class_size_threshold=model_config.rare_class_size_threshold,
     )
     
     # init classifier
@@ -64,7 +63,7 @@ def init_training():
     ).to(device)
 
     # img transforms to give to dataset class to standardize input imgs to the model's liking
-    static_T, random_train_T, random_val_T, rare_random_train_T = build_transforms(
+    static_T, random_train_T, random_val_T = build_transforms(
         target=model_config.input_img_dim[0],
         long_side_thresh=model_config.downsample_threshold,
         downsample_to=model_config.downsample_to,
@@ -72,7 +71,7 @@ def init_training():
         std=tree_model.backbone_data_cfg['std']
     )
 
-    train_loader, val_loader = assemble_dataloaders(tree_dset, static_T, random_train_T, random_val_T, rare_random_train_T, model_config.data_split_level, return_idxs=False, idxs_pool=None)
+    train_loader, val_loader = assemble_dataloaders(tree_dset, static_T, random_train_T, random_val_T, model_config.data_split_level, return_idxs=False, idxs_pool=None)
 
     # controls early stopping of training if performance plateaus
     # disabled if model_config.patience == 0

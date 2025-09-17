@@ -71,15 +71,4 @@ def build_transforms(
         T.Normalize(mean=mean, std=std),
     ])
 
-    # heavier augementations for rare classes
-    rare_random_train_tf = T.Compose([
-        T.RandomResizedCrop((target, target), scale=(0.7, 1.0), interpolation=InterpolationMode.BICUBIC, antialias=True),
-        T.RandomHorizontalFlip(0.5),
-        T.ColorJitter(0.2, 0.2, 0.2, 0.1), # brightness, contrast, saturation, hue
-        T.RandomAffine(degrees=15, translate=(0.2,0.2), scale=(0.8,1.2)),
-        T.Resize((target, target)),
-        T.ToTensor(),
-        T.Normalize(mean=mean, std=std),
-    ])
-
-    return static_tf, random_train_tf, random_eval_tf, rare_random_train_tf
+    return static_tf, random_train_tf, random_eval_tf

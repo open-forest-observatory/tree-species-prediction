@@ -9,7 +9,6 @@ from typing import List, Dict, Optional, Any
 import geopandas as gpd
 import hashlib
 import os 
-import numpy as np
 
 class TreeDataset(Dataset):
     """
@@ -49,13 +48,11 @@ class TreeDataset(Dataset):
         img_exts: List[str] = ['.png'],                 # img exts to load
         gpkg_dir: Optional[str | Path] = None,          # path to gpkg files, if None will not have row idxs of trees
         cache_dir: Optional[str | Path] = None,        # caching images to disk after static transforms
-        cache_ver: str = 'v1',                           # bump to invalidate existing cache and reapply transforms
-        rare_class_size_threshold: int = 0,           # 0 -> no limit; exclude classes with fewer than this num samples
+        cache_ver: str = 'v1'                           # bump to invalidate existing cache and reapply transforms
     ):
         self.imgs_root = imgs_root
         self.img_exts = {ext.lower() for ext in img_exts}
         self.tree_id_col_name = 'unique_ID'
-        self.rare_class_size_threshold = rare_class_size_threshold
 
         # recursively get img paths from root dir
         self.img_paths = self.get_img_paths_from_root()
@@ -71,10 +68,6 @@ class TreeDataset(Dataset):
         for m in self.meta:
             m['label_idx'] = self.label2idx_map[m['species']]
             m['unique_treeID'] = f"{m['dset']}-{m['treeID']}"
-        
-        label_counts = np.bincount([m['label_idx'] for m in self.meta]) # get class frequecies
-        self.rare_classes = set(np.where(label_counts < self.rare_class_size_threshold)[0].tolist())
-        print("Rare classes: ", self.rare_classes) 
 
         # get the row idx of each tree in the gpkg file
         if gpkg_dir is not None:
@@ -110,15 +103,6 @@ class TreeDataset(Dataset):
             ])
         )
 
-        # additional heavier augmentations for rare classes
-        # initially only tensorization
-        self.rare_random_transform = ( 
-            random_transform if random_transform is not None
-            else T.Compose([
-                T.ToTensor()
-            ])
-        )
-
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.cache_ver = cache_ver
 
@@ -127,7 +111,6 @@ class TreeDataset(Dataset):
 
     def __getitem__(self, idx: int, apply_random_transform: bool=True):
         meta = self.meta[idx]
-        label_idx = int(meta["label_idx"])
 
         # try to access static transformed img on disk cache first
         if self.cache_dir is not None:
@@ -141,10 +124,9 @@ class TreeDataset(Dataset):
             img = self.static_transform(img) # uint8 PIL img to save space
 
         if apply_random_transform: # should always be true for training, only false to visualize samples
-            if label_idx in self.rare_classes:
-                img = self.rare_random_transform(img)
-            else:
-                img = self.random_transform(img)
+            img = self.random_transform(img)
+
+        label_idx = int(meta["label_idx"])
 
         return img, label_idx, meta
 
