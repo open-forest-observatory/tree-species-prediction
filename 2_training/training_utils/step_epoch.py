@@ -1,5 +1,6 @@
 import torch
 from torch.amp import autocast
+from collections import defaultdict, Counter
 
 from tqdm import tqdm
 
@@ -24,9 +25,14 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
     num_classes = None # found in loop using model out dim
     eps = 1e-12 # avoid div by 0
 
+    # Tree-level aggregation tracking
+    tree_predictions = defaultdict(list)  # Pred for each image of each tree {tree_id: [pred1, pred2, ...]}
+    tree_confidences = defaultdict(list)  # Confidence score {tree_id: [conf1, conf2, ...]}
+    tree_labels = {}  # {tree_id: true_label}
+
     # iterate through batches
     pbar = tqdm(dataloader, desc=pbar_msg)
-    for batch_idx, (imgs, labels, _) in enumerate(pbar):
+    for batch_idx, (imgs, labels, metas) in enumerate(pbar):
         imgs = imgs.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
         batch_size = labels.size(0)
@@ -54,6 +60,17 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
             preds = logits.argmax(dim=1) # predictions are largest nums of output logits
             correct += (preds == labels).sum().item() # count correct predictions
             total += batch_size
+
+            # Collect tree-level predictions (only for validation)
+            if not training:
+                probabilities = torch.softmax(logits, dim=1)
+                confidences, _ = torch.max(probabilities, dim=1) # we ignore indices here because we have preds already
+                
+                for i in range(batch_size):
+                    tree_id = metas[i]['unique_treeID']
+                    tree_predictions[tree_id].append(preds[i].item())
+                    tree_confidences[tree_id].append(confidences[i].item())
+                    tree_labels[tree_id] = labels[i].item()
 
             # init per class metrics counters on first pass (if num_classes is still none)
             if num_classes is None:
@@ -108,8 +125,52 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
         'f1': f1,                       # balance of precision and recall
     }
 
+    # Add tree-level metrics for validation
+    if not training and tree_predictions:
+        tree_metrics = compute_tree_level_metrics(tree_predictions, tree_labels, tree_confidences)
+        metrics.update(tree_metrics)
+
     # early stopping check -> parent train fn should handle the early_stopper.stop_now
     if early_stopper is not None and early_stopper.enabled:
         stop_now, _ = early_stopper.step(metrics)
 
     return metrics
+
+def compute_tree_level_metrics(tree_predictions, tree_labels, tree_confidences):
+    """For each tree, what's our best single prediction when we aggregate it across images?"""
+
+    """
+    Example imput:
+
+    tree_predictions = {
+    "tree_A": [0, 2, 0, 0],     # 4 images: mostly class 0
+    "tree_B": [1, 1, 2]        # 3 images: mostly class 1
+    }
+
+    tree_labels = {
+        "tree_A": 0,       # GT is class 0
+        "tree_B": 1        # GT is class 1  
+    }
+
+    tree_confidences = {
+        "tree_A": [0.9, 0.6, 0.8, 0.7],
+        "tree_B": [0.5, 0.9, 0.4]
+    }
+    """
+    # Method 1: Majority vote aggregation
+    # majority_preds = {"tree_A": 0, "tree_B": 1}
+    
+    # Method 2: Confidence-weighted aggregation
+    # For each class this will sum up the confidence scores by class, and pick class with the highest
+    """
+    A scenario where this might be better:
+
+    tree_predictions = [1, 1, 1, 0, 0]
+    tree_confidences = [0.51, 0.52, 0.53, 0.95, 0.94]
+    
+    Majority vote -> class 1
+    Confidence weighted -> class 0 (0.95 + 0.94 > 0.51 + 0.52 + 0.53)
+
+    """
+    
+    # return metrics
