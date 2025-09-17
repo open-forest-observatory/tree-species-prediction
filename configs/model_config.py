@@ -33,6 +33,7 @@ class TreeModelConfig:
     max_class_imbalance_factor: float = 0      # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
     min_samples_per_class: int = 500            # 0 -> no limit; exclude classes with fewer than this num samples
+    use_class_balancing: bool = True           # use weighted random sampler to balance classes during training
     # determines how to split data into train/test
     # caution with plot level split -> currently no datasets marked as 'test' have been processed by steps prior to this training
     data_split_level: Literal['plot', 'tree', 'image'] = 'tree'
