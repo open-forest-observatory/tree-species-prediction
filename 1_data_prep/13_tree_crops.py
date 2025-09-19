@@ -9,8 +9,8 @@ import os
 from tqdm import tqdm
 import itertools
 import json
-
 import time
+import uuid   # for generating random IDs
 
 import _bootstrap
 from configs.path_config import path_config
@@ -50,15 +50,14 @@ oblique2 = Path("oblique/000446/000446-01/00")
 dset_names = sorted(os.listdir(tree_label_mask_paths))
 dset_gt_mapping = {dset_name: gpd.read_file(Path(ground_data_path, dset_name+'.gpkg')) for dset_name in dset_names}
 
-# assemble list of tuples for the data paths
-# each item in the list will be (src_info, mask_fp, img_path)
-# src info is a dict containing the dataset name (e.g. 0001_001435_001436), and flight_type (nadir or oblique)
-# and the mask and img paths are paired such that the mask corresponds to the image
-data_paths = []
+# Process each dataset individually
 missing_img_ctr = 0
 skipped_datasets = []
 
 for dset_name in dset_names:
+    # metadata records for this specific dataset
+    records = []
+    
     dset_tif = dset_name + '' # originally used _npy extension, leaving here in case render label names are ever different
     dset_idx, nadir_id, oblique_id = dset_name.split("_")
 
@@ -77,6 +76,12 @@ for dset_name in dset_names:
         print(f"Skipping dataset {dset_name}: missing folder(s)")
         skipped_datasets.append(dset_name)
         continue
+
+    # assemble list of tuples for this dataset's data paths
+    # each item in the list will be (src_info, mask_fp, img_path)
+    # src info is a dict containing the dataset name (e.g. 0001_001435_001436), and flight_type (nadir or oblique)
+    # and the mask and img paths are paired such that the mask corresponds to the image
+    data_paths = []
 
     for flight_dir, flight_type in [(nadir_base_path, 'nadir'), (oblique_base_path, 'oblique')]:
         try:
@@ -99,114 +104,137 @@ for dset_name in dset_names:
             print(f"WARNING: Missing label directory {flight_dir}")
             continue
 
+    if not data_paths:
+        print(f"No data paths found for dataset {dset_name}")
+        continue
+
+    pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
+    pbar.set_description(f"Processing dataset: {dset_name}")
+    
+    for src_info, mask_file_path, img_file_path in pbar:
+        plot_attributes = dset_gt_mapping[src_info['dset_name']][['unique_ID', 'species_code']] # id and species cols of ground ref geodataframe
+        live_dead = dset_gt_mapping[src_info['dset_name']]["live_dead"]
+        labelled_tree_ids = plot_attributes[plot_attributes.species_code.notnull()].unique_ID # get trees with species label
+        labelled_tree_ids = labelled_tree_ids.to_numpy(int)
+
+        img = Image.open(img_file_path) # load image
+        img_cx, img_cy = img.width / 2, img.height / 2
+        safe_radius = min(img_cx, img_cy) # how far a crop can be from the center to be acceptable distortion
+        #mask_ids = np.load(mask_file_path) # load npy tree id mask
+        mask_ids = tif.imread(mask_file_path) # load tif tree id mask
+        mask_ids = np.squeeze(mask_ids) # (H, W, 1) -> (H, W)
+        unique_mask_values = np.unique(mask_ids) # get unique mask ids
+
+        # load the json file that maps the mask IDs to their unique_ID values and create a mapping dict
+        IDs_to_labels_path = src_info["IDs_to_labels_path"]
+        with open(IDs_to_labels_path, "r") as f:
+            IDs_to_labels = json.load(f)
+        ID_mapping = {int(k): int(v) for k, v in IDs_to_labels.items()}
+
+        if LABELLED_ONLY:
+            # filter mask values to only those that map to labelled IDs
+            unique_mask_values = [uid for uid in unique_mask_values 
+                                  if ID_mapping.get(int(uid)) in labelled_tree_ids]
+
+        # iterate over ids
+        for tree_mask_value in unique_mask_values:
+            if np.isnan(tree_mask_value): # skip nan values
+                continue
+
+            # map mask value -> tree unique ID
+            tree_unique_id = ID_mapping.get(int(tree_mask_value))
+            if tree_unique_id is None:
+                raise ValueError(f"Tree unique_ID for mask value {tree_mask_value} is None. Check {IDs_to_labels_path}")
+
+            tree_unique_id = str(int(tree_unique_id)).zfill(5) # convert tree uid to 0 padded str to match plot_attributes format
+
+            # see if this tree has a species label
+            species_val = plot_attributes.loc[plot_attributes['unique_ID'] == tree_unique_id, 'species_code']
+            if len(species_val) == 0:
+                species_code = None
+            else:
+                species_code = species_val.iloc[0]
+                if pd.isna(species_code):
+                    species_code = None
+
+            species_file_label = 'NONE' if species_code is None else str(species_code)
+            species_dir_label = 'unlabelled' if species_code is None else 'labelled'
+
+            ys, xs = np.where(mask_ids == tree_mask_value) # gather all pixels of current tree
+            if ys.size == 0 or xs.size == 0:
+                continue  # skip if no pixels found
+
+            y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max() # current tree img bounds
+
+            # check for 'bad' crops
+            # currently looks for low res images (h or w < 200 px), 
+            # or crops near the edge of the images liable for distortion (any bbox edge <200px away from full img edge)
+            # TODO: also try laplacian variance and/or tenengrad score, as well as checking for low contrast
+
+            # low res img
+            # typically trees too far off in the distance
+            if y1 - y0 < IMAGE_RES_CONSTRAINT or x1 - x0 < IMAGE_RES_CONSTRAINT:
+                continue
+
+            # check if image within safe radius to limit distortion effects
+            crop_cx, crop_cy = (x0 + x1) / 2, (y0 + y1) / 2
+            diff = np.array([img_cx - crop_cx, img_cy - crop_cy])
+            if diff @ diff > safe_radius ** 2: # similar to euclidean norm but without sqrt -> faster
+                continue
+
+            # cropped near edge
+            # near edge may not capture whole tree
+            # radial detection above should capture most of these but this exists as a failsafe
+            if img.height - y1 < IMAGE_RES_CONSTRAINT or img.width - x1 < IMAGE_RES_CONSTRAINT \
+            or y0 < IMAGE_RES_CONSTRAINT or x0 < IMAGE_RES_CONSTRAINT:
+                continue
+
+            # crop image to bbox plus padding
+            # cropping in PIL is left, top, right, bottom
+            bbox_pad_width, bbox_pad_height = (x1 - x0)  * BBOX_PADDING_RATIO, (y1 - y0) * BBOX_PADDING_RATIO
+            bbox = (x0 - bbox_pad_width, y0 - bbox_pad_height, x1 + bbox_pad_width, y1 + bbox_pad_height)
+            cropped_img = img.crop(bbox)
+
+            #output_path = "2_training/data/cropped_trees/"
+            fp = Path(
+                output_path,                        # base dir to the training data folder
+                species_dir_label,                  # separate trees with species labels or no species labels
+                src_info['dset_name'],              # original dataset name (src folder name of images/masks)
+                f"treeID{tree_unique_id}"           # tree id from mask
+            ).resolve()
+            os.makedirs(fp, exist_ok=True)
+
+            # generate random 10-digit ID for the image
+            image_id = str(uuid.uuid4().int)[:10]   # take first 10 digits of a UUID-derived int
+            crop_path = fp / f"{image_id}.png"
+
+            cropped_img.save(crop_path) # save cropped img
+
+            # add record for metadata CSV
+            records.append({
+                "image_id": image_id,
+                "image_path": str(crop_path.resolve()),  # full path to file
+                "mask_value": tree_mask_value,              # original mask ID
+                "tree_unique_id": tree_unique_id,        # unique ID from ground data
+                "species": species_file_label,
+                "dataset_name": src_info['dset_name'],
+                "flight_type": src_info['flight_type'],
+            })
+
+    # save per-dataset metadata CSV after processing each dataset
+    if records:
+        df = pd.DataFrame(records, columns=[
+            "image_id", "image_path", "mask_value", "tree_unique_id", "species",
+            "dataset_name", "flight_type",
+        ])
+        
+        metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
+        df.to_csv(metadata_fp, index=False)
+        print(f"Metadata saved to {metadata_fp}")
+    else:
+        print(f"No records to save for dataset {dset_name}")
+
 # should be 0
 print(f"Found {missing_img_ctr} mask files without corresponding image files")
 if skipped_datasets:
     print(f"Skipped datasets due to missing folders: {skipped_datasets}")
-
-pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
-for src_info, mask_file_path, img_file_path in pbar:
-    pbar.set_description(f"Cur plot: {src_info['dset_name']}")
-    plot_attributes = dset_gt_mapping[src_info['dset_name']][['unique_ID', 'species_code']] # id and species cols of ground ref geodataframe
-    labelled_tree_ids = plot_attributes[plot_attributes.species_code.notnull()].unique_ID # get trees with species label
-    labelled_tree_ids = labelled_tree_ids.to_numpy(int)
-
-    img = Image.open(img_file_path) # load image
-    img_cx, img_cy = img.width / 2, img.height / 2
-    safe_radius = min(img_cx, img_cy) # how far a crop can be from the center to be acceptable distortion
-    #mask_ids = np.load(mask_file_path) # load npy tree id mask
-    mask_ids = tif.imread(mask_file_path) # load tif tree id mask
-    mask_ids = np.squeeze(mask_ids) # (H, W, 1) -> (H, W)
-    unique_mask_values = np.unique(mask_ids) # get unique mask ids
-
-    # load the json file that maps the mask IDs to their unique_ID values and create a mapping dict
-    IDs_to_labels_path = src_info["IDs_to_labels_path"]
-    with open(IDs_to_labels_path, "r") as f:
-        IDs_to_labels = json.load(f)
-    ID_mapping = {int(k): int(v) for k, v in IDs_to_labels.items()}
-
-    if LABELLED_ONLY:
-        # filter mask values to only those that map to labelled IDs
-        unique_mask_values = [uid for uid in unique_mask_values 
-                              if ID_mapping.get(int(uid)) in labelled_tree_ids]
-
-    # iterate over ids
-    for tree_mask_value in unique_mask_values:
-        if np.isnan(tree_mask_value): # skip nan values
-            continue
-
-        # map mask value -> tree unique ID
-        tree_unique_id = ID_mapping.get(int(tree_mask_value))
-        if tree_unique_id is None:
-            raise ValueError(f"Tree unique_ID for mask value {tree_mask_value} is None. Check {IDs_to_labels_path}")
-
-        tree_unique_id = str(int(tree_unique_id)).zfill(5) # convert tree uid to 0 padded str to match plot_attributes format
-
-        # see if this tree has a species label
-        species_val = plot_attributes.loc[plot_attributes['unique_ID'] == tree_unique_id, 'species_code']
-        if len(species_val) == 0:
-            species_code = None
-        else:
-            species_code = species_val.iloc[0]
-            if pd.isna(species_code):
-                species_code = None
-
-        species_file_label = 'NONE' if species_code is None else str(species_code)
-        species_dir_label = 'unlabelled' if species_code is None else 'labelled'
-
-        ys, xs = np.where(mask_ids == tree_mask_value) # gather all pixels of current tree
-        if ys.size == 0 or xs.size == 0:
-            continue  # skip if no pixels found
-
-        y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max() # current tree img bounds
-
-        # check for 'bad' crops
-        # currently looks for low res images (h or w < 200 px), 
-        # or crops near the edge of the images liable for distortion (any bbox edge <200px away from full img edge)
-        # TODO: also try laplacian variance and/or tenengrad score, as well as checking for low contrast
-
-        # low res img
-        # typically trees too far off in the distance
-        if y1 - y0 < IMAGE_RES_CONSTRAINT or x1 - x0 < IMAGE_RES_CONSTRAINT:
-            continue
-
-        # check if image within safe radius to limit distortion effects
-        crop_cx, crop_cy = (x0 + x1) / 2, (y0 + y1) / 2
-        diff = np.array([img_cx - crop_cx, img_cy - crop_cy])
-        if diff @ diff > safe_radius ** 2: # similar to euclidean norm but without sqrt -> faster
-            continue
-
-        # cropped near edge
-        # near edge may not capture whole tree
-        # radial detection above should capture most of these but this exists as a failsafe
-        if img.height - y1 < IMAGE_RES_CONSTRAINT or img.width - x1 < IMAGE_RES_CONSTRAINT \
-        or y0 < IMAGE_RES_CONSTRAINT or x0 < IMAGE_RES_CONSTRAINT:
-            continue
-
-        # crop image to bbox plus padding
-        # cropping in PIL is left, top, right, bottom
-        bbox_pad_width, bbox_pad_height = (x1 - x0)  * BBOX_PADDING_RATIO, (y1 - y0) * BBOX_PADDING_RATIO
-        bbox = (x0 - bbox_pad_width, y0 - bbox_pad_height, x1 + bbox_pad_width, y1 + bbox_pad_height)
-        cropped_img = img.crop(bbox)
-
-        #output_path = "2_training/data/cropped_trees/"
-        fp = Path(
-            output_path,                        # base dir to the training data folder
-            species_dir_label,              # separate trees with species labels or no species labels
-            src_info['dset_name'],          # original dataset name (src folder name of images/masks)
-            f"treeID{tree_unique_id}"          # tree id from mask
-        ).resolve()
-        os.makedirs(fp, exist_ok=True)
-
-        # cropped img file name
-        fn = f"treeID{tree_unique_id}-species{species_file_label}-dset{src_info['dset_name']}-view{src_info['flight_type']}.png"
-        crop_path = fp / fn
-
-        # add a ctr to not overwrite other saved crops of same trees
-        for i in itertools.count(1): # start at 2 since first image gets a 1
-            candidate = crop_path.with_name(f"{crop_path.stem}-{i}{crop_path.suffix}")
-            if not candidate.exists():
-                crop_path = candidate
-                break
-
-        cropped_img.save(crop_path) # save cropped img
