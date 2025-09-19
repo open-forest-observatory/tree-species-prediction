@@ -125,10 +125,6 @@ for src_info, mask_file_path, img_file_path in pbar:
         IDs_to_labels = json.load(f)
     ID_mapping = {int(k): int(v) for k, v in IDs_to_labels.items()}
 
-    # precompute mapping from pixels -> label index
-    unique_mask_values, inverse = np.unique(mask_ids, return_inverse=True)
-    inverse = inverse.reshape(mask_ids.shape)
-
     if LABELLED_ONLY:
         # filter mask values to only those that map to labelled IDs
         unique_mask_values = [uid for uid in unique_mask_values 
@@ -158,9 +154,7 @@ for src_info, mask_file_path, img_file_path in pbar:
         species_file_label = 'NONE' if species_code is None else str(species_code)
         species_dir_label = 'unlabelled' if species_code is None else 'labelled'
 
-        # gather all pixels of current tree using inverse mapping
-        tree_idx = np.where(unique_mask_values == tree_mask_value)[0][0]
-        ys, xs = np.where(inverse == tree_idx)
+        ys, xs = np.where(mask_ids == tree_mask_value) # gather all pixels of current tree
         if ys.size == 0 or xs.size == 0:
             continue  # skip if no pixels found
 
