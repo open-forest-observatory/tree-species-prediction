@@ -3,47 +3,92 @@ import pandas as pd
 import geopandas as gpd
 from pathlib import Path
 from PIL import Image
-import sys
 import tifffile as tif
 import os
 from tqdm import tqdm
-import itertools
 import json
-import time
 import uuid   # for generating random IDs
 
 import _bootstrap
 from configs.path_config import path_config
 
-# pad bbox of cropped images
-# actual padding is this ratio times the edge len
+# Species mapping configuration
+MAPPING_LEVEL = "l1"  # Options: "l1", "l2", "l3", "l4", or None for no mapping
+INCLUDE_UNMAPPED_SPECIES = True  # Whether to save crops for species not in mapping
+
+# Other parameters
 BBOX_PADDING_RATIO = 0.02           
 IMAGE_RES_CONSTRAINT = 250  # min edge length (height or width) to save
+LABELLED_ONLY = True  # if using on all images (labelled and not labelled) -> set to False
 
-# if using on all images (labelled and not labelled) -> set to False
-LABELLED_ONLY = True
-
-# rendered instance IDs (.tif) files
+# Path configurations
 tree_label_mask_paths = path_config.rendered_instance_ids
-
-# raw images folder
 raw_imgs_path = path_config.raw_image_sets_folder
-
-# ground data information (.gpkg) files
 ground_data_path = path_config.drone_crowns_with_field_attributes
-
-# output to save cropped images
 output_path = path_config.cropped_tree_training_images
+species_crosswalk_path = path_config.species_class_crosswalk_file
 
-''' sample file paths for reference
-dset1_name = "0001_001435_001436"
-nadir1 = Path("nadir/001435/001435-01/00")
-oblique1 = Path("oblique/001436/001436-01/00")
+def load_species_mapping(crosswalk_path, level):
+    """
+    Load species crosswalk and create mapping dictionary for specified level.
+    
+    Args:
+        crosswalk_path (str): Path to the crosswalk CSV file
+        level (str): Mapping level ("l1", "l2", "l3", "l4") or None for no mapping
+    
+    Returns:
+        dict: Mapping from original species_code to target level species code
+        None: If level is None (no mapping)
+    """
+    if level is None:
+        print("No species mapping specified - using original species codes")
+        return None
+    
+    if level not in ["l1", "l2", "l3", "l4"]:
+        raise ValueError(f"Invalid mapping level '{level}'. Must be one of: l1, l2, l3, l4, or None")
+    
+    # Load crosswalk
+    crosswalk_df = pd.read_csv(crosswalk_path)
+    
+    # Column names for the specified level
+    primary_col = f"primary_species_{level}"
+    species_col = f"species_code_{level}"
+    
+    # Create mapping dictionary: species_code -> target level species (only for primary_species_lX == True)
+    species_mapping = {}
+    for _, row in crosswalk_df.iterrows():
+        if row[primary_col]:  # Only include species where primary_species_lX is True
+            species_mapping[row['species_code']] = row[species_col]
+    
+    print(f"Loaded species crosswalk for level {level.upper()} with {len(species_mapping)} valid mappings")
+    print(f"Available {level.upper()} classes: {sorted(set(species_mapping.values()))}")
+    
+    return species_mapping
 
-dset2_name = "0002_000451_000446"
-nadir2 = Path("nadir/000451/000451-01/00")
-oblique2 = Path("oblique/000446/000446-01/00")
-'''
+def map_species(original_species, species_mapping, level):
+    """
+    Map original species to target level, handling unmapped species.
+    
+    Args:
+        original_species (str): Original species code
+        species_mapping (dict): Mapping dictionary (None if no mapping)
+        level (str): Target mapping level
+    
+    Returns:
+        tuple: (mapped_species, is_mapped)
+            - mapped_species: Target level species or original species if no mapping
+            - is_mapped: Boolean indicating if mapping was successful
+    """
+    if species_mapping is None:
+        return original_species, True  # No mapping requested, consider all as "mapped"
+    
+    if original_species in species_mapping:
+        return species_mapping[original_species], True
+    else:
+        return original_species, False
+
+# Load species mapping based on configuration
+species_mapping = load_species_mapping(species_crosswalk_path, MAPPING_LEVEL)
 
 # assemble list of dirs
 # ["0001_001435_001436", "0002_000451_000446", ...]
@@ -53,12 +98,18 @@ dset_gt_mapping = {dset_name: gpd.read_file(Path(ground_data_path, dset_name+'.g
 # Process each dataset individually
 missing_img_ctr = 0
 skipped_datasets = []
+mapping_stats = {
+    'total_processed': 0,
+    'mapped_species': 0,
+    'unmapped_species': 0,
+    'saved_crops': 0,
+    'skipped_unmapped': 0
+}
 
 for dset_name in dset_names:
     # metadata records for this specific dataset
     records = []
     
-    dset_tif = dset_name + '' # originally used _npy extension, leaving here in case render label names are ever different
     dset_idx, nadir_id, oblique_id = dset_name.split("_")
 
     # Check if output folder for this dataset already exists in 'labelled'
@@ -68,8 +119,8 @@ for dset_name in dset_names:
         continue
 
     # get tif mask files from all the subdirs
-    nadir_base_path = Path(tree_label_mask_paths, dset_tif, 'nadir', nadir_id)
-    oblique_base_path = Path(tree_label_mask_paths, dset_tif, 'oblique', oblique_id)
+    nadir_base_path = Path(tree_label_mask_paths, dset_name, 'nadir', nadir_id)
+    oblique_base_path = Path(tree_label_mask_paths, dset_name, 'oblique', oblique_id)
 
     # Check if both folders exist
     if not nadir_base_path.exists() or not oblique_base_path.exists():
@@ -113,14 +164,12 @@ for dset_name in dset_names:
     
     for src_info, mask_file_path, img_file_path in pbar:
         plot_attributes = dset_gt_mapping[src_info['dset_name']][['unique_ID', 'species_code']] # id and species cols of ground ref geodataframe
-        live_dead = dset_gt_mapping[src_info['dset_name']]["live_dead"]
         labelled_tree_ids = plot_attributes[plot_attributes.species_code.notnull()].unique_ID # get trees with species label
         labelled_tree_ids = labelled_tree_ids.to_numpy(int)
 
         img = Image.open(img_file_path) # load image
         img_cx, img_cy = img.width / 2, img.height / 2
         safe_radius = min(img_cx, img_cy) # how far a crop can be from the center to be acceptable distortion
-        #mask_ids = np.load(mask_file_path) # load npy tree id mask
         mask_ids = tif.imread(mask_file_path) # load tif tree id mask
         mask_ids = np.squeeze(mask_ids) # (H, W, 1) -> (H, W)
         unique_mask_values = np.unique(mask_ids) # get unique mask ids
@@ -151,14 +200,42 @@ for dset_name in dset_names:
             # see if this tree has a species label
             species_val = plot_attributes.loc[plot_attributes['unique_ID'] == tree_unique_id, 'species_code']
             if len(species_val) == 0:
-                species_code = None
+                original_species = None
             else:
-                species_code = species_val.iloc[0]
-                if pd.isna(species_code):
-                    species_code = None
+                original_species = species_val.iloc[0]
+                if pd.isna(original_species):
+                    original_species = None
 
-            species_file_label = 'NONE' if species_code is None else str(species_code)
-            species_dir_label = 'unlabelled' if species_code is None else 'labelled'
+            mapping_stats['total_processed'] += 1
+
+            # Handle species mapping
+            if original_species is not None:
+                mapped_species, is_mapped = map_species(original_species, species_mapping, MAPPING_LEVEL)
+                
+                if is_mapped:
+                    mapping_stats['mapped_species'] += 1
+                    final_species = mapped_species
+                    should_save_crop = True
+                else:
+                    mapping_stats['unmapped_species'] += 1
+                    if INCLUDE_UNMAPPED_SPECIES:
+                        final_species = original_species  # Keep original species
+                        should_save_crop = True
+                    else:
+                        mapping_stats['skipped_unmapped'] += 1
+                        continue  # Skip this tree entirely
+            else:
+                # No species label
+                final_species = None
+                should_save_crop = True
+                is_mapped = False
+
+            # Determine file naming and directory structure
+            species_file_label = 'NONE' if final_species is None else str(final_species)
+            species_dir_label = 'unlabelled' if final_species is None else 'labelled'
+
+            if not should_save_crop:
+                continue
 
             ys, xs = np.where(mask_ids == tree_mask_value) # gather all pixels of current tree
             if ys.size == 0 or xs.size == 0:
@@ -195,7 +272,6 @@ for dset_name in dset_names:
             bbox = (x0 - bbox_pad_width, y0 - bbox_pad_height, x1 + bbox_pad_width, y1 + bbox_pad_height)
             cropped_img = img.crop(bbox)
 
-            #output_path = "2_training/data/cropped_trees/"
             fp = Path(
                 output_path,                        # base dir to the training data folder
                 species_dir_label,                  # separate trees with species labels or no species labels
@@ -209,32 +285,69 @@ for dset_name in dset_names:
             crop_path = fp / f"{image_id}.png"
 
             cropped_img.save(crop_path) # save cropped img
+            mapping_stats['saved_crops'] += 1
 
-            # add record for metadata CSV
-            records.append({
+            # Build metadata record with dynamic columns based on mapping level
+            record = {
                 "image_id": image_id,
                 "image_path": str(crop_path.resolve()),  # full path to file
                 "mask_value": tree_mask_value,              # original mask ID
                 "tree_unique_id": tree_unique_id,        # unique ID from ground data
-                "species": species_file_label,
+                "species_original": original_species,   # original species code
                 "dataset_name": src_info['dset_name'],
                 "flight_type": src_info['flight_type'],
-            })
+                "mapping_level": MAPPING_LEVEL if MAPPING_LEVEL else "none",
+                "is_mapped": is_mapped if original_species is not None else None,
+            }
+            
+            # Add level-specific columns
+            if MAPPING_LEVEL:
+                record[f"species_{MAPPING_LEVEL}"] = final_species if is_mapped else None
+            
+            # Final species column (what's actually used for file naming)
+            record["species_final"] = species_file_label
+
+            records.append(record)
 
     # save per-dataset metadata CSV after processing each dataset
     if records:
-        df = pd.DataFrame(records, columns=[
-            "image_id", "image_path", "mask_value", "tree_unique_id", "species",
-            "dataset_name", "flight_type",
+        # Build column list
+        base_columns = [
+            "image_id", "image_path", "mask_value", "tree_unique_id", 
+            "species_original"
+        ]
+        
+        if MAPPING_LEVEL:
+            base_columns.append(f"species_{MAPPING_LEVEL}")
+        
+        base_columns.extend([
+            "species_final", "dataset_name", "flight_type", 
+            "mapping_level", "is_mapped"
         ])
         
+        meta_df = pd.DataFrame(records, columns=base_columns)
+        
         metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
-        df.to_csv(metadata_fp, index=False)
+        meta_df.to_csv(metadata_fp, index=False)
         print(f"Metadata saved to {metadata_fp}")
     else:
         print(f"No records to save for dataset {dset_name}")
 
-# should be 0
-print(f"Found {missing_img_ctr} mask files without corresponding image files")
+# Print final summary
+print(f"Processing complete!")
+print(f"Found {missing_img_ctr} mask files without corresponding image files") # should be 0
 if skipped_datasets:
     print(f"Skipped datasets due to missing folders: {skipped_datasets}")
+
+print(f"Species mapping summary:")
+print(f"Mapping level: {MAPPING_LEVEL if MAPPING_LEVEL else 'None (original species)'}")
+print(f"Include unmapped species: {INCLUDE_UNMAPPED_SPECIES}")
+print(f"Total trees processed: {mapping_stats['total_processed']}")
+print(f"Successfully mapped species: {mapping_stats['mapped_species']}")
+print(f"Unmapped species: {mapping_stats['unmapped_species']}")
+print(f"Total crops saved: {mapping_stats['saved_crops']}")
+if not INCLUDE_UNMAPPED_SPECIES:
+    print(f"Crops skipped (unmapped): {mapping_stats['skipped_unmapped']}")
+
+if species_mapping:
+    print(f"Available {MAPPING_LEVEL.upper()} classes: {sorted(set(species_mapping.values()))}")
