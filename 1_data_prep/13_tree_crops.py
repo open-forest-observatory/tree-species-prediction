@@ -112,10 +112,11 @@ for dset_name in dset_names:
     
     dset_idx, nadir_id, oblique_id = dset_name.split("_")
 
-    # Check if output folder for this dataset already exists in 'labelled'
+    # If metadata file for this dataset already exists, skip processing it again
     labelled_output_dir = Path(output_path, "labelled", dset_name)
-    if labelled_output_dir.exists():
-        print(f"Skipping dataset {dset_name}: output folder already exists in 'labelled'")
+    metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
+    if metadata_fp.exists():
+        print(f"Skipping dataset {dset_name}: has already been processed")
         continue
 
     # get tif mask files from all the subdirs
