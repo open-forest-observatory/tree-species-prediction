@@ -98,6 +98,10 @@ class PathConfig:
     rendered_instance_ids: Path = Path(intermediate_data_folder, "rendered_instance_ids/renders")
     rendered_instance_ids_vis: Path = Path(intermediate_data_folder, "rendered_instance_ids/visualizations")
 
+    # output of 13_tree_crops.py
+    # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
+    cropped_tree_training_images = intermediate_data_folder / 'cropped_trees'
+
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
         hints = get_type_hints(self.__class__) # get types of class attributes
