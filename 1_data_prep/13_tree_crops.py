@@ -215,27 +215,21 @@ for dset_name in dset_names:
                 if is_mapped:
                     mapping_stats['mapped_species'] += 1
                     final_species = mapped_species
-                    should_save_crop = True
                 else:
                     mapping_stats['unmapped_species'] += 1
                     if INCLUDE_UNMAPPED_SPECIES:
                         final_species = original_species  # Keep original species
-                        should_save_crop = True
                     else:
                         mapping_stats['skipped_unmapped'] += 1
                         continue  # Skip this tree entirely
             else:
                 # No species label
                 final_species = None
-                should_save_crop = True
                 is_mapped = False
 
             # Determine file naming and directory structure
             species_file_label = 'NONE' if final_species is None else str(final_species)
             species_dir_label = 'unlabelled' if final_species is None else 'labelled'
-
-            if not should_save_crop:
-                continue
 
             ys, xs = np.where(mask_ids == tree_mask_value) # gather all pixels of current tree
             if ys.size == 0 or xs.size == 0:
@@ -296,6 +290,7 @@ for dset_name in dset_names:
                 "species_original": original_species,   # original species code
                 "dataset_name": src_info['dset_name'],
                 "flight_type": src_info['flight_type'],
+                "source_image_path": img_file_path,    # path to original full image
                 "mapping_level": MAPPING_LEVEL if MAPPING_LEVEL else "none",
                 "is_mapped": is_mapped if original_species is not None else None,
             }
