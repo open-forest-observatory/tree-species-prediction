@@ -42,13 +42,13 @@ class TreeDataset(Dataset):
 
     def __init__(
         self,
-        imgs_root: str | Path | List[str | Path],       # path(s) to root folder to grab images
-        static_transform: Optional[torch.nn.Module] = None,     # torch transformations to apply that happen once in init
-        random_transform: Optional[torch.nn.Module] = None,     # torch transformations to apply that happen in __getitem__
-        img_exts: List[str] = ['.png'],                 # img exts to load
-        gpkg_dir: Optional[str | Path] = None,          # path to gpkg files, if None will not have row idxs of trees
-        cache_dir: Optional[str | Path] = None,        # caching images to disk after static transforms
-        cache_ver: str = 'v1'                           # bump to invalidate existing cache and reapply transforms
+        imgs_root: str | Path | List[str | Path],           # path(s) to root folder to grab images
+        static_transform: Optional[torch.nn.Module] = None, # torch transformations to apply that happen once in init
+        random_transform: Optional[torch.nn.Module] = None, # torch transformations to apply that happen in __getitem__
+        img_exts: List[str] = ['.png'],                     # img exts to load
+        gpkg_dir: Optional[str | Path] = None,              # path to gpkg files, if None will not have row idxs of trees
+        cache_dir: Optional[str | Path] = None,             # caching images to disk after static transforms
+        cache_ver: str = 'v1'                               # bump to invalidate existing cache and reapply transforms
     ):
         self.imgs_root = imgs_root
         self.img_exts = {ext.lower() for ext in img_exts}

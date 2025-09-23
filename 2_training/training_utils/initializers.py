@@ -71,7 +71,16 @@ def init_training():
         std=tree_model.backbone_data_cfg['std']
     )
 
-    train_loader, val_loader = assemble_dataloaders(tree_dset, static_T, random_train_T, random_val_T, model_config.data_split_level, return_idxs=False, idxs_pool=None)
+    train_loader, val_loader = assemble_dataloaders(
+        tree_dset,
+        static_T,
+        random_train_T,
+        random_val_T,
+        model_config.data_split_level,
+        upper_limit_n_samples=model_config.max_total_samples,
+        return_idxs=False,
+        idxs_pool=None
+    )
 
     # controls early stopping of training if performance plateaus
     # disabled if model_config.patience == 0

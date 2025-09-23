@@ -330,7 +330,60 @@ def check_no_tree_overlap(dset, train_idxs, val_idxs):
     else:
         print("OK: no tree overlap between TRAIN and VAL.")
 
-def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, return_idxs=False, idxs_pool=None):
+def cap_indices_evenly_by_class(
+    idxs: list[int],
+    label_lookup: list[int],     # label_lookup[i] = label_idx for dataset index i
+    upper_limit: int,
+    seed: int = 42,              # keep it deterministic
+) -> list[int]:
+    """Return up to `upper_limit` idxs with as even a per-class distribution as possible."""
+    if upper_limit <= 0 or len(idxs) <= upper_limit:
+        return idxs
+
+    # group indices by class present in `idxs`
+    cls2idxs = defaultdict(list)
+    for i in idxs:
+        cls2idxs[label_lookup[i]].append(i)
+
+    # (optional) shuffle within each class for fair sampling, but deterministic
+    rng = np.random.RandomState(seed)
+    for cls in cls2idxs:
+        rng.shuffle(cls2idxs[cls])
+
+    classes = list(cls2idxs.keys())
+    C = len(classes)
+    if C == 0:
+        return []
+
+    # base quota + remainder
+    base = max(upper_limit // C, 0)
+    rem  = max(upper_limit - base * C, 0)
+
+    # first pass: take min(base, available) from each class
+    take = {cls: min(base, len(cls2idxs[cls])) for cls in classes}
+    taken_total = sum(take.values())
+
+    # distribute remaining budget over a few passes until we run out of remainder or capacity
+    while rem > 0:
+        any_added = False
+        for cls in classes:
+            if rem == 0:
+                break
+            if take[cls] < len(cls2idxs[cls]):
+                take[cls] += 1
+                rem -= 1
+                any_added = True
+        if not any_added:
+            break  # no more capacity anywhere
+
+    # collect selected indices, then (optionally) globally shuffle for mixing
+    selected = []
+    for cls in classes:
+        selected.extend(cls2idxs[cls][:take[cls]])
+    rng.shuffle(selected)
+    return selected
+
+def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, upper_limit_n_samples=0, return_idxs=False, idxs_pool=None):
     train_cp = copy.copy(tree_dset)
     val_cp = copy.copy(tree_dset)
 
@@ -346,6 +399,18 @@ def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, retu
         per_class_sample_limit_factor=model_config.max_class_imbalance_factor,
         min_samples_per_class=model_config.min_samples_per_class
     ) 
+
+    # optionally enforce overall cap with even per-class distribution (applied separately to train/val)
+    if upper_limit_n_samples > 0:
+        # lookup: dataset index -> label
+        lbl_lookup = [m["label_idx"] for m in tree_dset.meta]
+
+        train_dset_idxs = cap_indices_evenly_by_class(
+            train_dset_idxs, lbl_lookup, upper_limit_n_samples
+        )
+        val_dset_idxs = cap_indices_evenly_by_class(
+            val_dset_idxs, lbl_lookup, upper_limit_n_samples
+        )
 
     # swap default transform of dataset class with the ones just built
     train_cp.static_transform = static_T

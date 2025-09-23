@@ -30,13 +30,16 @@ class TreeModelConfig:
     downsample_threshold: int = 574             # if longer edge of input img > this, downsample instead of just crop
     downsample_to: int = 518                    # size to downsample long edge too before padding
     num_workers: int = 8                        # workers for the dataloader
-    max_class_imbalance_factor: float = 0      # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
+    max_class_imbalance_factor: float = 0       # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
     min_samples_per_class: int = 500            # 0 -> no limit; exclude classes with fewer than this num samples
-    use_class_balancing: bool = True           # use weighted random sampler to balance classes during training
+    max_total_samples: int = 0                  # for testing purposes, randomly subsample images up to this amount;
+                                                # set to 0 to have no upper limit
+    use_class_balancing: bool = True            # use weighted random sampler to balance classes during training
+    
     # determines how to split data into train/test
     # caution with plot level split -> currently no datasets marked as 'test' have been processed by steps prior to this training
-    data_split_level: Literal['plot', 'tree', 'image'] = 'tree'
+    data_split_level: Literal['plot', 'tree', 'image'] = 'plot'
     
     # epoch loop iterations
     epochs: int = 25                            # num passes through the training dataset
@@ -63,9 +66,9 @@ class TreeModelConfig:
     use_data_reduction: bool = False            # gradient based subset selection (see `configs/data_reduction_config.py``)
     
     # early stopping
-    patience: int = 0                           # how many consecutive epochs must be same or worse before stopping training early
+    patience: int = 4                           # how many consecutive epochs must be same or worse before stopping training early
                                                 # enter 0 to disable early stopping
-    improvement_margin: float = 0.              # how much better does prev epoch have to be to not stop early
+    improvement_margin: float = 0.1              # how much better does prev epoch have to be to not stop early
     # metric tracked to determine when to stop (corresponds to metrics dict returned by `step_epoch()`)
     monitor_metric: Literal['f1', 'recall', 'precision', 'accuracy', 'loss'] = 'f1'
     objective: Literal ['max', 'min'] = 'max'   # dictates to stopper whether 'best' means higher or lower

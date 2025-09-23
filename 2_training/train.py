@@ -51,16 +51,6 @@ def train():
         cfg_dict = asdict(model_config)
         yaml.dump(cfg_dict, cfg_file, default_flow_style=False)
 
-    # for debugging (may need again later):
-    # count n_samples per class of whole dataset
-    #labels = torch.tensor([m['label_idx'] for m in tree_dset.meta])
-    #unique, counts = torch.unique(labels, return_counts=True)
-    #for idx, count in zip(unique.tolist(), counts.tolist()):
-    #    print(tree_dset.idx2label_map[idx], count)
-    # list model parameters/layers
-    #for name, p in tree_model.named_parameters():
-    #    print(name)
-
     n_layers_unfrozen = 0
     prev_subset_idxs = None # for data reduction
     for epoch in range(model_config.epochs):
@@ -68,15 +58,16 @@ def train():
         if epoch >= model_config.freeze_backbone_epochs and n_layers_unfrozen <= model_config.n_last_layers_to_unfreeze:
             n_layers_unfrozen += model_config.layer_unfreeze_step
             tree_model.unfreeze_last_n_backbone_layers(n=n_layers_unfrozen)
+            early_stopper.enabled = False
         else:
-            early_stopper.enabled
+            early_stopper.enabled = True
 
         # TODO keep early_stopper disabled until after opening all layers, since it dips for a bit when unfreezing
             
         # train one step
         train_metrics = _step_epoch(
             tree_model, train_loader, device, criterion,
-            optim, scaler, early_stopper=None, training=True, epoch_num=epoch+1
+            optim, scaler, training=True, epoch_num=epoch+1
         )
         scheduler.step()
 
@@ -84,13 +75,17 @@ def train():
         with torch.no_grad():
             val_metrics = _step_epoch(
                 tree_model, val_loader, device, criterion,
-                optim=None, scaler=None, early_stopper=early_stopper, training=False, epoch_num=epoch+1
+                optim=None, scaler=None, training=False, epoch_num=epoch+1
             )
 
             # Compute confusion matrix for validation set
             matrix_fig = confusion_matrix(unique_species_labels, val_loader, tree_model, device, exclude_empty=True)
             tb_writer.add_figure("Val Confusion Matrix", matrix_fig, epoch + 1)
             plt.close(matrix_fig)
+        
+        # early stopping check
+        if early_stopper is not None and early_stopper.enabled:
+            early_stopper.step(val_metrics)
 
         # Logging train metrics
         for key, value in train_metrics.items():
