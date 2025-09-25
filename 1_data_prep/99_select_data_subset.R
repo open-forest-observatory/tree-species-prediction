@@ -144,3 +144,11 @@ final_datasets_attributes = tibble(dataset = datasets_final) |>
 
 tot_trees = sum(final_datasets_attributes$n_trees)
 tot_trees
+
+datasets_final
+
+# Save the final selected datasets
+write_csv(
+    tibble(dataset = datasets_final),
+    "/ofo-share/species-prediction-project/intermediate/dataset_to_render_subset.csv"
+)
