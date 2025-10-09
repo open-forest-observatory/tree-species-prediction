@@ -7,14 +7,20 @@ import tifffile as tif
 import os
 from tqdm import tqdm
 import json
-import uuid   # for generating random IDs
+import uuid
+from scipy.ndimage import binary_dilation, label
 
 import _bootstrap
 from configs.path_config import path_config
 
 # Species mapping configuration
-MAPPING_LEVEL = "l1"  # Options: "l1", "l2", "l3", "l4", or None for no mapping
+MAPPING_LEVEL = "l2"  # Options: "l1", "l2", "l3", "l4", or None for no mapping
 INCLUDE_UNMAPPED_SPECIES = True  # Whether to save crops for species not in mapping
+
+# Background masking configuration
+MASK_BACKGROUND = True  # Whether to mask out background trees
+MASK_BUFFER_PIXELS = 20  # Buffer zone around mask in pixels to retain
+BACKGROUND_VALUE = 128  # Value to set background pixels (0-255, recommend 128 for mid-gray)
 
 # Other parameters
 BBOX_PADDING_RATIO = 0.02           
@@ -87,12 +93,85 @@ def map_species(original_species, species_mapping, level):
     else:
         return original_species, False
 
+
+def filter_contours_by_area(binary_mask, area_threshold=0.5):
+    """
+    Filter contours in a binary mask, keeping only the largest contour and 
+    any contours with area >= area_threshold * largest_contour_area.
+    """
+    labeled_mask, num_features = label(binary_mask)
+    
+    if num_features <= 1:
+        return binary_mask
+    
+    # Calculate area of each contour
+    contour_areas = [(i, np.sum(labeled_mask == i)) for i in range(1, num_features + 1)]
+    contour_areas.sort(key=lambda x: x[1], reverse=True)
+    
+    largest_area = contour_areas[0][1]
+    min_area = largest_area * area_threshold
+    
+    # Keep only contours meeting the area threshold
+    filtered_mask = np.zeros_like(binary_mask, dtype=bool)
+    for contour_id, area in contour_areas:
+        if area >= min_area:
+            filtered_mask |= (labeled_mask == contour_id)
+    
+    return filtered_mask
+
+
+def create_masked_image(img_array, tree_mask, buffer_pixels, background_value):
+    """
+    Create a masked version of the image where background is set to a neutral value.
+   
+    Args:
+        img_array (np.ndarray): Original image as numpy array (H, W, C)
+        tree_mask (np.ndarray): Binary mask for the tree (H, W), True for tree pixels
+        buffer_pixels (int): Number of pixels to dilate the mask (buffer zone)
+        background_value (int): Value to set background pixels (0-255)
+   
+    Returns:
+        np.ndarray: Masked image array
+    """
+    # Create dilated mask (adds buffer around the tree)
+    if buffer_pixels > 0:
+        dilated_mask = binary_dilation(tree_mask, iterations=buffer_pixels)
+    else:
+        dilated_mask = tree_mask
+   
+    # Create output image
+    masked_img = img_array.copy()
+   
+    # Set background pixels to background_value
+    for c in range(img_array.shape[2]):
+        masked_img[:, :, c][~dilated_mask] = background_value
+   
+    return masked_img
+
+
 # Load species mapping based on configuration
 species_mapping = load_species_mapping(species_crosswalk_path, MAPPING_LEVEL)
 
-# assemble list of dirs
-# ["0001_001435_001436", "0002_000451_000446", ...]
-dset_names = sorted(os.listdir(tree_label_mask_paths))
+
+# Specify datasets to process (set to None to process all datasets)
+DATASETS_TO_PROCESS = [
+    "0073_000874_000932",
+    "0074_000874_000932",
+    "0076_000874_000932",
+    "0077_000810_000808",
+    "0078_000810_000808",
+    "0079_000810_000808",
+    "0080_000810_000808"
+]
+
+if DATASETS_TO_PROCESS is None:
+    dset_names = sorted(os.listdir(tree_label_mask_paths))
+    print(f"Processing all {len(dset_names)} datasets")
+else:
+    all_dset_names = sorted(os.listdir(tree_label_mask_paths))
+    dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
+    print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
+
 dset_gt_mapping = {dset_name: gpd.read_file(Path(ground_data_path, dset_name+'.gpkg')) for dset_name in dset_names}
 
 # Process each dataset individually
@@ -169,6 +248,7 @@ for dset_name in dset_names:
         labelled_tree_ids = labelled_tree_ids.to_numpy(int)
 
         img = Image.open(img_file_path) # load image
+        img_array = np.array(img) if MASK_BACKGROUND else None  # Convert to numpy array for masking
         img_cx, img_cy = img.width / 2, img.height / 2
         safe_radius = min(img_cx, img_cy) # how far a crop can be from the center to be acceptable distortion
         mask_ids = tif.imread(mask_file_path) # load tif tree id mask
@@ -232,16 +312,21 @@ for dset_name in dset_names:
             species_file_label = 'NONE' if final_species is None else str(final_species)
             species_dir_label = 'unlabelled' if final_species is None else 'labelled'
 
-            ys, xs = np.where(mask_ids == tree_mask_value) # gather all pixels of current tree
+
+            # Create binary mask for current tree and filter contours
+            tree_binary_mask = (mask_ids == tree_mask_value)
+            filtered_mask = filter_contours_by_area(tree_binary_mask, area_threshold=0.5)
+            
+            ys, xs = np.where(filtered_mask)
+            
             if ys.size == 0 or xs.size == 0:
-                continue  # skip if no pixels found
+                continue  # skip if no pixels found after filtering
 
             y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max() # current tree img bounds
 
             # check for 'bad' crops
-            # currently looks for low res images (h or w < 200 px), 
-            # or crops near the edge of the images liable for distortion (any bbox edge <200px away from full img edge)
-            # TODO: also try laplacian variance and/or tenengrad score, as well as checking for low contrast
+            # currently looks for low res images (h or w < 250 px),
+            # or crops near the edge of the images liable for distortion (any bbox edge <250px away from full img edge)
 
             # low res img
             # typically trees too far off in the distance
@@ -261,11 +346,27 @@ for dset_name in dset_names:
             or y0 < IMAGE_RES_CONSTRAINT or x0 < IMAGE_RES_CONSTRAINT:
                 continue
 
+            # Apply background masking if enabled
+            if MASK_BACKGROUND:
+                masked_img_array = create_masked_image(
+                    img_array,
+                    filtered_mask,
+                    MASK_BUFFER_PIXELS,
+                    BACKGROUND_VALUE
+                )
+               
+                # Convert back to PIL Image for cropping
+                img_to_crop = Image.fromarray(masked_img_array)
+            else:
+                img_to_crop = img
+
+
             # crop image to bbox plus padding
             # cropping in PIL is left, top, right, bottom
             bbox_pad_width, bbox_pad_height = (x1 - x0)  * BBOX_PADDING_RATIO, (y1 - y0) * BBOX_PADDING_RATIO
             bbox = (x0 - bbox_pad_width, y0 - bbox_pad_height, x1 + bbox_pad_width, y1 + bbox_pad_height)
-            cropped_img = img.crop(bbox)
+            cropped_img = img_to_crop.crop(bbox)
+
 
             fp = Path(
                 output_path,                        # base dir to the training data folder
