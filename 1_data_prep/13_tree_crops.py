@@ -80,6 +80,7 @@ def map_species_all_levels(original_species, all_mappings):
     mapped_species = {}
     for level in ["l1", "l2", "l3", "l4"]:
         if original_species in all_mappings[level]:
+            # all_mappings[level] maps original species code to the code for this level
             mapped_species[level] = all_mappings[level][original_species]
         else:
             mapped_species[level] = None
@@ -92,24 +93,29 @@ def filter_contours_by_area(binary_mask, area_threshold=0.5):
     Filter contours in a binary mask, keeping only the largest contour and 
     any contours with area >= area_threshold * largest_contour_area.
     """
+    # Label connected regions (contours) in the binary mask
     labeled_mask, num_features = label(binary_mask)
-    
+
+    # If only one contour, return the original mask
     if num_features <= 1:
         return binary_mask
-    
-    # Calculate area of each contour
+
+    # Calculate area (pixel count) for each contour
+    # TODO: Find a more efficient way to compute areas
     contour_areas = [(i, np.sum(labeled_mask == i)) for i in range(1, num_features + 1)]
     contour_areas.sort(key=lambda x: x[1], reverse=True)
-    
+
+    # Find largest contour area and set minimum area threshold
     largest_area = contour_areas[0][1]
     min_area = largest_area * area_threshold
-    
-    # Keep only contours meeting the area threshold
+
+    # Build mask with only contours meeting the area threshold (ideally should be only one)
     filtered_mask = np.zeros_like(binary_mask, dtype=bool)
     for contour_id, area in contour_areas:
         if area >= min_area:
+            # Set elements to True wherever either filtered_mask is already True or (labeled_mask == contour_id)
             filtered_mask |= (labeled_mask == contour_id)
-    
+
     return filtered_mask
 
 
