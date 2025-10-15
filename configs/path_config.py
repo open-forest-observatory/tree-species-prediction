@@ -102,6 +102,9 @@ class PathConfig:
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
     cropped_tree_training_images = intermediate_data_folder / 'cropped_trees'
 
+    # Output of 14_prepare_mmpretrain_dataset.py
+    mmpretrain_dataset_folder: Path = Path(intermediate_data_folder, 'mmpretrain_dataset')
+
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
         hints = get_type_hints(self.__class__) # get types of class attributes
