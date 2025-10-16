@@ -16,7 +16,7 @@ from configs.path_config import path_config
 # Background masking configuration
 MASK_BACKGROUND = True  # Whether to mask out background trees
 MASK_BUFFER_PIXELS = 20  # Buffer zone around mask in pixels to retain
-BACKGROUND_VALUE = 128  # Value to set background pixels (0-255, recommend 128 for mid-gray)
+BACKGROUND_VALUE = (128, 128, 128)  # Value to set background pixels (0-255, recommend 128 for mid-gray)
 
 # Other parameters
 BBOX_PADDING_RATIO = 0.02           
@@ -127,7 +127,7 @@ def create_masked_image(img_array, tree_mask, buffer_pixels, background_value):
         img_array (np.ndarray): Original image as numpy array (H, W, C)
         tree_mask (np.ndarray): Binary mask for the tree (H, W), True for tree pixels
         buffer_pixels (int): Number of pixels to dilate the mask (buffer zone)
-        background_value (int): Value to set background pixels (0-255)
+        background_value (tuple): Values for 3 channels to set background pixels (0-255)
    
     Returns:
         np.ndarray: Masked image array
@@ -142,8 +142,7 @@ def create_masked_image(img_array, tree_mask, buffer_pixels, background_value):
     masked_img = img_array.copy()
    
     # Set background pixels to background_value
-    for c in range(img_array.shape[2]):
-        masked_img[:, :, c][~dilated_mask] = background_value
+    masked_img[~dilated_mask] = background_value
    
     return masked_img
 
