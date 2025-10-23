@@ -91,7 +91,8 @@ def main():
 
         # Create parent folder as plotID_nadirmissionID_obliquemissionID
         parent_folder = (
-            Path(path_config.raw_image_sets_folder) / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
+            Path(path_config.paired_image_sets_for_photogrammetry)
+            / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
         )
         parent_folder.mkdir(parents=True, exist_ok=True)
 

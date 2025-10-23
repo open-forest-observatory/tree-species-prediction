@@ -33,7 +33,7 @@ def produce_combined_config(imagery_folder: Path):
         str(
             Path(
                 path_config.argo_imagery_path,
-                f.relative_to(path_config.argo_inputs_image_sets),
+                f.relative_to(path_config.paired_image_sets_for_photogrammetry),
             )
         )
         for f in sub_missions
@@ -63,7 +63,7 @@ def produce_combined_config(imagery_folder: Path):
 
 if __name__ == "__main__":
     # List all the imagery folders
-    imagery_sets = list(path_config.argo_inputs_image_sets.glob("*"))
+    imagery_sets = list(path_config.paired_image_sets_for_photogrammetry.glob("*"))
     # For each folder, produce the corresponding config
     for imagery_set in imagery_sets:
         produce_combined_config(imagery_set)
