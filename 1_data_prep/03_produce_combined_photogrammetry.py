@@ -15,7 +15,10 @@ def produce_combined_config(imagery_folder: Path):
     # Extract the last part of the path, which is the "<plot_id>_<nadir_id>_<oblique_id>" string
     run_name = imagery_folder.name
 
-    _, nadir_id, oblique_id = run_name.split("_")
+    try:
+        _, nadir_id, oblique_id = run_name.split("_")
+    except ValueError:
+        return
     # Find the path to the imagery datasets.
     # Note that we could skip the step of computing oblique and nadir folders and just use one glob
     # specifying that folders are nested three levels deep, but this is a little more robust to

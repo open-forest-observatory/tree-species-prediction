@@ -33,7 +33,7 @@ class PathConfig:
     )
 
     # Path to parent remote folder with all missions
-    all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_01"
+    all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_02"
 
     # Intermediate
     intermediate_data_folder: Path = Path(data_root_folder, "intermediate")
@@ -45,7 +45,7 @@ class PathConfig:
     preprocessing_folder: Path = Path(intermediate_data_folder, "preprocessing")
 
     paired_image_sets_for_photogrammetry: Path = Path(
-        "/ofo-share/argo-input/datasets/test"
+        "/ofo-share-2/argo-data/argo-input/datasets"
     )
 
     # This will be the path within the container
