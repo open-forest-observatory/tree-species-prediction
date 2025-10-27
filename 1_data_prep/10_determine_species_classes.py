@@ -1,11 +1,11 @@
+import sys
 from pathlib import Path
+
 import geopandas as gpd
 import pandas as pd
-import sys
 
 import _bootstrap
 from configs.path_config import path_config
-
 
 ground_trees = gpd.read_file(path_config.ground_reference_trees_file)
 ground_drone_pairs = pd.read_csv(

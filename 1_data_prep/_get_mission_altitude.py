@@ -1,15 +1,14 @@
 import argparse
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 import rasterio as rio
-from shapely.geometry import Point
 from geograypher.cameras import MetashapeCameraSet
+from geograypher.constants import EXAMPLE_CAMERAS_FILENAME, EXAMPLE_DTM_FILE
 from geograypher.utils.files import ensure_containing_folder
-from geograypher.constants import (
-    EXAMPLE_CAMERAS_FILENAME,
-    EXAMPLE_DTM_FILE,
-)
+from shapely.geometry import Point
+
 
 def main(camera_file, dtm_file, output_csv, verbose):
 

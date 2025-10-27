@@ -1,14 +1,13 @@
 import numpy as np
+
 np.seterr(all='raise') 
 
 import torch
-from numpy.linalg import cond
-from numpy.linalg import inv
-from numpy.linalg import norm
+from numpy.linalg import cond, inv, norm
 from scipy import sparse as sp
-from scipy.linalg import lstsq
-from scipy.linalg import solve
+from scipy.linalg import lstsq, solve
 from scipy.optimize import nnls
+
 
 def omp_select(grads_matrix, grad_sum, budget, device="cuda"):
     """

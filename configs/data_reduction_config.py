@@ -1,9 +1,10 @@
-from pathlib import Path
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from utils.config_utils import parse_config_args
+
 
 @dataclass
 class DataReductionConfig:

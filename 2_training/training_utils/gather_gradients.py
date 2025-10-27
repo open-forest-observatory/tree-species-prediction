@@ -1,8 +1,10 @@
-import torch
-from tqdm import tqdm
 import gc
 import math
+
+import torch
 from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
+from tqdm import tqdm
+
 
 # Function to chunk a list into pieces of size chunk_size
 def chunk_list(lst, chunk_size):

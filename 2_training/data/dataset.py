@@ -1,6 +1,7 @@
 import torch
-from torch.utils.data import Dataset
 from PIL import Image
+from torch.utils.data import Dataset
+
 
 class TreeDataset(Dataset):
     def __init__(self, records, img_root, class_to_idx, transform, use_metadata):

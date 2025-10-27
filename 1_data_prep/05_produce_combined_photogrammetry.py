@@ -1,10 +1,10 @@
 from pathlib import Path
 
-import _bootstrap
-from configs.path_config import path_config
-
 # path resolved in _bootstrap.py
 from metashape_workflow_functions import make_derived_yaml
+
+import _bootstrap
+from configs.path_config import path_config
 
 METASHAPE_CONFIG = Path(
     path_config.automate_metashape_path, "config", "config-base.yml"

@@ -1,8 +1,9 @@
-import sys
-import subprocess
 import re
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
 from tqdm import tqdm
 
 import _bootstrap

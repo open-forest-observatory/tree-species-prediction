@@ -1,6 +1,7 @@
+import timm
 import torch
 import torch.nn as nn
-import timm
+
 
 class TreeSpeciesClassifierFromPretrained:
     def __init__(self,

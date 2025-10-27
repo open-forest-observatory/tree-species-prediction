@@ -10,8 +10,8 @@ import pandas as pd
 import shapely
 from scipy.spatial import KDTree
 from shapely.affinity import translate
-from tqdm import tqdm
 from spatial_utils.geospatial import ensure_projected_CRS
+from tqdm import tqdm
 
 import _bootstrap
 from configs.path_config import path_config

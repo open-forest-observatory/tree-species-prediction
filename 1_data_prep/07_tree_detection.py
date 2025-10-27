@@ -1,17 +1,12 @@
-from pathlib import Path
 import sys
-from tree_detection_framework.preprocessing.preprocessing import (
-    create_dataloader,
-    create_intersection_dataloader,
-)
+from pathlib import Path
+
 from tree_detection_framework.detection.detector import (
-    GeometricTreeTopDetector,
-    GeometricTreeCrownDetector,
-)
+    GeometricTreeCrownDetector, GeometricTreeTopDetector)
 from tree_detection_framework.postprocessing.postprocessing import (
-    remove_edge_detections,
-    multi_region_NMS,
-)
+    multi_region_NMS, remove_edge_detections)
+from tree_detection_framework.preprocessing.preprocessing import (
+    create_dataloader, create_intersection_dataloader)
 
 # Add folder where constants.py is to system search path
 import _bootstrap

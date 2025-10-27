@@ -1,7 +1,7 @@
 import os
+import shutil
 import subprocess
 import sys
-import shutil
 from pathlib import Path
 
 import geopandas as gpd

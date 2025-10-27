@@ -1,9 +1,10 @@
-from pathlib import Path
-from dataclasses import dataclass, fields
-from typing import get_type_hints
 import argparse
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import get_type_hints
 
 from utils.config_utils import parse_config_args
+
 
 @dataclass
 class PathConfig:

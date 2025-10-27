@@ -1,16 +1,18 @@
-import torch
-from torch.utils.data import DataLoader, Subset
 import gc
 import time
 from itertools import product
 
+import torch
 from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
-from training_utils.omp import omp_select
+from torch.utils.data import DataLoader, Subset
 from training_utils.gather_gradients import gather_discriminator_gradients
-from training_utils.train_epoch import train_epoch
 from training_utils.io import save_model
+from training_utils.omp import omp_select
+from training_utils.train_epoch import train_epoch
+
 from configs.data_reduction_config import dr_config
 from configs.model_config import model_config
+
 
 def generate_params(**params):
     """

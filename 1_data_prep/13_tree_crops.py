@@ -1,14 +1,15 @@
+import json
+import os
+import uuid
+from pathlib import Path
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-from pathlib import Path
-from PIL import Image
 import tifffile as tif
-import os
-from tqdm import tqdm
-import json
-import uuid
+from PIL import Image
 from scipy.ndimage import binary_dilation, label
+from tqdm import tqdm
 
 import _bootstrap
 from configs.path_config import path_config
