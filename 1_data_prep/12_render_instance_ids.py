@@ -64,7 +64,7 @@ if __name__ == "__main__":
             path_config.photogrammetry_folder, dataset, "output", f"{dataset}_dtm-ptcloud.tif"
         )
         # The image folder used to create the Metashape project
-        image_folder = Path(path_config.raw_image_sets_folder, dataset)
+        image_folder = Path(path_config.paired_image_sets_for_photogrammetry, dataset)
         original_image_folder = Path("/data/argo-input/datasets", dataset)
 
         # OUTPUTS

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 import geopandas as gpd
@@ -46,7 +47,7 @@ def create_hardlinks_for_images(
                 parents=True, exist_ok=True
             )  # create all parent folders if needed
             try:
-                os.link(src, dst)
+                shutil.copy(src, dst)
             except FileExistsError:
                 pass  # already linked, ignore
         else:
@@ -91,8 +92,12 @@ def main():
 
         # Create parent folder as plotID_nadirmissionID_obliquemissionID
         parent_folder = (
-            Path(path_config.raw_image_sets_folder) / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
+            Path(path_config.paired_image_sets_for_photogrammetry)
+            / f"{plot_id:04d}_{hn_id:06d}_{lo_id:06d}"
         )
+        if parent_folder.exists() and len(list(parent_folder.rglob("*"))) > 1:
+            print("Skipping existing folder:", parent_folder)
+            continue
         parent_folder.mkdir(parents=True, exist_ok=True)
 
         # Get drone mission geometry polygons
@@ -107,15 +112,15 @@ def main():
 
         # Get the intersection of the buffered plot with both mission geometries
         # Buffering by 0 to fix invalid geometries, if any
-        combined_intersection = (buffered_plot.buffer(0)).intersection(hn_geom.buffer(0)).intersection(
-            lo_geom.buffer(0)
+        combined_intersection = (
+            (buffered_plot.buffer(0))
+            .intersection(hn_geom.buffer(0))
+            .intersection(lo_geom.buffer(0))
         )
-
         process_mission(hn_id, "nadir", parent_folder, combined_intersection)
         process_mission(lo_id, "oblique", parent_folder, combined_intersection)
 
         print(f"Completed processing for plot_id: {plot_id}")
-
 
 
 if __name__ == "__main__":

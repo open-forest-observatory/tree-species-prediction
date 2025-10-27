@@ -25,7 +25,7 @@ LABELLED_ONLY = True  # if using on all images (labelled and not labelled) -> se
 
 # Path configurations
 tree_label_mask_paths = path_config.rendered_instance_ids
-raw_imgs_path = path_config.raw_image_sets_folder
+raw_imgs_path = path_config.paired_image_sets_for_photogrammetry
 ground_data_path = path_config.drone_crowns_with_field_attributes
 output_path = path_config.cropped_tree_training_images
 species_crosswalk_path = path_config.species_class_crosswalk_file
