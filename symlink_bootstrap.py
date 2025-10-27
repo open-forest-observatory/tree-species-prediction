@@ -11,6 +11,7 @@ WORKING_DIRS = [
 
 BOOTSTRAP_NAME = "_bootstrap.py"
 
+
 def main():
     root = Path(__file__).parent.resolve()
     bootstrap = root / BOOTSTRAP_NAME
@@ -36,6 +37,7 @@ def main():
             print(f"Link Created: {link} -> {bootstrap}")
         except Exception as e:
             print(f"Failed to link into '{subname}':\n{e}")
+
 
 if __name__ == "__main__":
     main()

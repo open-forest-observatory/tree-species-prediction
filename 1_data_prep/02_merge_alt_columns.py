@@ -10,8 +10,11 @@ import pandas as pd
 
 # Add folder where constants.py is to system search path
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (ALL_MISSIONS_METADATA_FILE,
-                       DRONE_MISSIONS_WITH_ALT_FILE, MISSION_ALTITUDES_FOLDER)
+from constants import (
+    ALL_MISSIONS_METADATA_FILE,
+    DRONE_MISSIONS_WITH_ALT_FILE,
+    MISSION_ALTITUDES_FOLDER,
+)
 
 metadata_gdf = gpd.read_file(ALL_MISSIONS_METADATA_FILE)
 
@@ -29,5 +32,7 @@ for file_path in csv_files:
         altitude_data.append(row)
 
 altitude_df = pd.DataFrame(altitude_data)
-merged_gdf = metadata_gdf.merge(altitude_df, on="mission_id", how="left")  # keep all rows from left, match with right
+merged_gdf = metadata_gdf.merge(
+    altitude_df, on="mission_id", how="left"
+)  # keep all rows from left, match with right
 merged_gdf.to_file(DRONE_MISSIONS_WITH_ALT_FILE)

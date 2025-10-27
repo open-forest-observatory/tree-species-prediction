@@ -67,22 +67,24 @@ class PathConfig:
         preprocessing_folder, "ofo-all-missions-metadata-with-altitude.gpkg"
     )
 
-    all_missions_metadata_file = Path("ofo-share/catalog-data-prep/01_raw-imagery-ingestion/metadata/3_final/ofo-all-missions-metadata.gpkg")
+    all_missions_metadata_file = Path(
+        "ofo-share/catalog-data-prep/01_raw-imagery-ingestion/metadata/3_final/ofo-all-missions-metadata.gpkg"
+    )
 
     ground_plot_drone_mission_matches_file: Path = Path(
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )
 
-    hdbscan_clustered_plots = Path(intermediate_data_folder, "hdbscan_clustered_plots.gpkg")
+    hdbscan_clustered_plots = Path(
+        intermediate_data_folder, "hdbscan_clustered_plots.gpkg"
+    )
     train_test_split_file = Path(intermediate_data_folder, "train_test_split.csv")
 
     drone_images_root: Path = Path(
         "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
     )
     chm_folder: Path = Path(intermediate_data_folder, "CHMs")
-    tree_detections_folder: Path = Path(
-        intermediate_data_folder, "detected_trees"
-    )
+    tree_detections_folder: Path = Path(intermediate_data_folder, "detected_trees")
     shifted_field_trees_folder: Path = Path(
         intermediate_data_folder, "shifted_field_trees"
     )
@@ -97,28 +99,37 @@ class PathConfig:
     )
 
     # Output of 12_render_instance_ids.py
-    rendered_instance_ids: Path = Path(intermediate_data_folder, "rendered_instance_ids/renders")
-    rendered_instance_ids_vis: Path = Path(intermediate_data_folder, "rendered_instance_ids/visualizations")
+    rendered_instance_ids: Path = Path(
+        intermediate_data_folder, "rendered_instance_ids/renders"
+    )
+    rendered_instance_ids_vis: Path = Path(
+        intermediate_data_folder, "rendered_instance_ids/visualizations"
+    )
 
     # output of 13_tree_crops.py
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
-    cropped_tree_training_images = intermediate_data_folder / 'cropped_trees'
+    cropped_tree_training_images = intermediate_data_folder / "cropped_trees"
 
     # Output of 14_prepare_mmpretrain_dataset.py
-    mmpretrain_dataset_folder: Path = Path(intermediate_data_folder, 'mmpretrain_dataset')
+    mmpretrain_dataset_folder: Path = Path(
+        intermediate_data_folder, "mmpretrain_dataset"
+    )
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
-        hints = get_type_hints(self.__class__) # get types of class attributes
+        hints = get_type_hints(self.__class__)  # get types of class attributes
         if name in hints:
-            expected = hints[name] # get expected type of attr being assigned
-            if not isinstance(value, expected): # if type assigning mismatches type of attr,
+            expected = hints[name]  # get expected type of attr being assigned
+            if not isinstance(
+                value, expected
+            ):  # if type assigning mismatches type of attr,
                 try:
-                    value = expected(value) # try to typecast value to attr's type
+                    value = expected(value)  # try to typecast value to attr's type
                 except Exception as e:
                     raise TypeError(
                         f"Cannot cast `{name}` to {expected.__name__!r}: {e}"
                     )
-        super().__setattr__(name, value) # if above checks pass, assign value to attr
+        super().__setattr__(name, value)  # if above checks pass, assign value to attr
+
 
 path_config, path_args = parse_config_args(PathConfig)

@@ -8,5 +8,6 @@ from configs.model_config import model_config
 def train():
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     train()

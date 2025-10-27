@@ -77,15 +77,19 @@ def process_mission(mission_id, mission_type, parent_folder, combined_intersecti
 
 
 def main():
-    plot_mission_matches = pd.read_csv(path_config.ground_plot_drone_mission_matches_file)
+    plot_mission_matches = pd.read_csv(
+        path_config.ground_plot_drone_mission_matches_file
+    )
     # Project to meters-based CRS
     mission_meta = gpd.read_file(path_config.drone_missions_with_alt_file).to_crs(32610)
     plots_gdf = gpd.read_file(path_config.ground_reference_plots_file).to_crs(32610)
 
     # Buffer the plots by 100m
-    plots_gdf['geometry'] = plots_gdf.geometry.buffer(100)
+    plots_gdf["geometry"] = plots_gdf.geometry.buffer(100)
 
-    for _, row in tqdm(plot_mission_matches.iterrows(), total=len(plot_mission_matches)):
+    for _, row in tqdm(
+        plot_mission_matches.iterrows(), total=len(plot_mission_matches)
+    ):
         plot_id = row["plot_id"]
         hn_id = int(row["mission_id_hn"])
         lo_id = int(row["mission_id_lo"])

@@ -10,6 +10,7 @@ def _unwrap_optional(t):
         return next((a for a in get_args(t) if a is not type(None)), str)  # noqa: E721
     return t
 
+
 def _str2bool(v: str) -> bool:
     if isinstance(v, bool):
         return v
@@ -18,6 +19,7 @@ def _str2bool(v: str) -> bool:
     if v.lower() in {"false", "f", "0", "no", "n"}:
         return False
     raise argparse.ArgumentTypeError("Boolean value expected.")
+
 
 def parse_config_args(config_class):
     """
@@ -33,7 +35,7 @@ def parse_config_args(config_class):
         # Compute the default value for help text
         if f.default is not MISSING:
             default_val = f.default
-        elif f.default_factory is not MISSING: # for default_factory attrs
+        elif f.default_factory is not MISSING:  # for default_factory attrs
             default_val = f.default_factory()
         else:
             default_val = None

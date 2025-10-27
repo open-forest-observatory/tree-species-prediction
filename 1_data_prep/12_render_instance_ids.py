@@ -3,6 +3,7 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+
 # Library imports
 from geograypher.cameras.derived_cameras import MetashapeCameraSet
 from geograypher.entrypoints.render_labels import render_labels
@@ -51,16 +52,24 @@ if __name__ == "__main__":
 
         # INPUTS
         # The input labels
-        labels_file = Path(path_config.drone_crowns_with_field_attributes, f"{dataset}.gpkg")
+        labels_file = Path(
+            path_config.drone_crowns_with_field_attributes, f"{dataset}.gpkg"
+        )
         # The mesh exported from Metashape
         mesh_file = Path(
             path_config.photogrammetry_folder, dataset, "output", f"{dataset}_mesh.ply"
         )
         cameras_file = Path(
-            path_config.photogrammetry_folder, dataset, "output", f"{dataset}_cameras.xml"
+            path_config.photogrammetry_folder,
+            dataset,
+            "output",
+            f"{dataset}_cameras.xml",
         )
         dtm_file = Path(
-            path_config.photogrammetry_folder, dataset, "output", f"{dataset}_dtm-ptcloud.tif"
+            path_config.photogrammetry_folder,
+            dataset,
+            "output",
+            f"{dataset}_dtm-ptcloud.tif",
         )
         # The image folder used to create the Metashape project
         image_folder = Path(path_config.paired_image_sets_for_photogrammetry, dataset)
@@ -73,7 +82,9 @@ if __name__ == "__main__":
         vis_output_folder = path_config.rendered_instance_ids_vis / dataset
 
         if render_output_folder.exists() and any(render_output_folder.iterdir()):
-            print(f"Skipping {dataset} - renders already exist at {render_output_folder}")
+            print(
+                f"Skipping {dataset} - renders already exist at {render_output_folder}"
+            )
             continue
 
         if not labels_file.exists():

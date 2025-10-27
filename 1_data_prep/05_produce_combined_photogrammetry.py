@@ -27,7 +27,9 @@ def produce_combined_config(imagery_folder: Path):
     oblique_dataset_path = Path(imagery_folder, "oblique", oblique_id)
     # Find the sub-folders, corresponding to sub-missions of this dataset, for both oblique and
     # nadir images
-    sub_missions = list(nadir_dataset_path.glob("*")) + list(oblique_dataset_path.glob("*"))
+    sub_missions = list(nadir_dataset_path.glob("*")) + list(
+        oblique_dataset_path.glob("*")
+    )
 
     # When we run photogrammetry it's going to be within docker and the data will be mounted in a
     # volume. This will change the paths compared to what's on /ofo-share. This updates the input

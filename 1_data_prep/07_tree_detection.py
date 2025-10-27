@@ -2,11 +2,17 @@ import sys
 from pathlib import Path
 
 from tree_detection_framework.detection.detector import (
-    GeometricTreeCrownDetector, GeometricTreeTopDetector)
+    GeometricTreeCrownDetector,
+    GeometricTreeTopDetector,
+)
 from tree_detection_framework.postprocessing.postprocessing import (
-    multi_region_NMS, remove_edge_detections)
+    multi_region_NMS,
+    remove_edge_detections,
+)
 from tree_detection_framework.preprocessing.preprocessing import (
-    create_dataloader, create_intersection_dataloader)
+    create_dataloader,
+    create_intersection_dataloader,
+)
 
 # Add folder where constants.py is to system search path
 import _bootstrap
@@ -79,7 +85,10 @@ def detect_trees(
     treecrown_detections = treecrown_detector.predict(raster_vector_dataloader)
     # Suppress overlapping crown predictions. This step can be slow.
     treecrown_detections = multi_region_NMS(
-        treecrown_detections, confidence_column="score", intersection_method="IOS", run_per_region_NMS=False
+        treecrown_detections,
+        confidence_column="score",
+        intersection_method="IOS",
+        run_per_region_NMS=False,
     )
     # Save
     treecrown_detections.save(Path(save_folder, "tree_crowns.gpkg"))
