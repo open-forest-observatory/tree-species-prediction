@@ -51,7 +51,9 @@ class PathConfig:
     # This will be the path within the container
     argo_imagery_path: Path = Path("/data/argo-input/datasets")
 
-    derived_metashape_configs_folder: Path = Path("/ofo-share/argo-input/configs")
+    derived_metashape_configs_folder: Path = Path(
+        "/ofo-share-2/argo-data/argo-input/configs"
+    )
 
     # Inputs for first preprocessing step 01_get_mission_altitude.py
     mission_altitudes_folder: Path = Path(preprocessing_folder, "mission_altitudes")
