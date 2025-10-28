@@ -72,14 +72,22 @@ def match_trees_singlestratum(
     below_max_matching_dist = distance_matrix < max_dist
 
     # Compute which matches fit all three criteria
-    possible_pairings = np.logical_and.reduce([above_min_height, below_max_height, below_max_matching_dist])
+    possible_pairings = np.logical_and.reduce(
+        [above_min_height, below_max_height, below_max_matching_dist]
+    )
 
     # Extract the indices of possible pairings
-    possible_pairing_field_inds, possible_paring_drone_inds = np.where(possible_pairings)
-    possible_pairing_inds = np.vstack([possible_pairing_field_inds, possible_paring_drone_inds]).T
+    possible_pairing_field_inds, possible_paring_drone_inds = np.where(
+        possible_pairings
+    )
+    possible_pairing_inds = np.vstack(
+        [possible_pairing_field_inds, possible_paring_drone_inds]
+    ).T
 
     # Extract the distances corresponding to the valid matches
-    possible_dists = distance_matrix[possible_pairing_field_inds, possible_paring_drone_inds]
+    possible_dists = distance_matrix[
+        possible_pairing_field_inds, possible_paring_drone_inds
+    ]
 
     # Sort so the paired indices are sorted, corresponding to the smallest distance pair first
     ordered_by_dist = np.argsort(possible_dists)
@@ -93,9 +101,11 @@ def match_trees_singlestratum(
     matched_drone_tree_inds = []
 
     # Iterate over the indices
-    for (field_ind, drone_ind) in possible_pairing_inds:
+    for field_ind, drone_ind in possible_pairing_inds:
         # If niether the field or drone tree has already been matched, this is a valid pairing
-        if (field_ind not in matched_field_tree_inds) and (drone_ind not in matched_drone_tree_inds):
+        if (field_ind not in matched_field_tree_inds) and (
+            drone_ind not in matched_drone_tree_inds
+        ):
             # Add the matches to the lists
             matched_field_tree_inds.append(field_ind)
             matched_drone_tree_inds.append(drone_ind)
@@ -132,7 +142,7 @@ def match_field_and_drone_trees(
     drone_trees_path: Path,
     drone_crowns_path: Path,
     field_perim: gpd.GeoDataFrame,
-    field_buffer_dist : float = 10.0,
+    field_buffer_dist: float = 10.0,
 ):
     # Load all the data
     field_trees = gpd.read_file(field_trees_path)
@@ -164,7 +174,9 @@ def match_field_and_drone_trees(
     matched_field_trees.drop("geometry", axis=1, inplace=True)
     # Compute the "unique_ID" for matched drone trees. This is a crosswalk with the
     # "treetop_unique_ID" field in the crown polygons
-    drone_tree_unique_IDs = drone_trees.iloc[matched_drone_tree_inds].unique_ID.to_numpy()
+    drone_tree_unique_IDs = drone_trees.iloc[
+        matched_drone_tree_inds
+    ].unique_ID.to_numpy()
     # These two variables, matched_field_trees and drone_tree_unique_IDs, are now ordered in the same way
     # This means corresponding rows should be paired. Effectively, we could add the
     # drone_tree_unique_ID as a column of the field trees and then merge based on that. But we don't
@@ -177,11 +189,13 @@ def match_field_and_drone_trees(
         left_on="treetop_unique_ID",
         right_on=drone_tree_unique_IDs,
         how="left",
-        suffixes=("_drone", "_field") # Append these suffixes in cases of name collisions
+        suffixes=(
+            "_drone",
+            "_field",
+        ),  # Append these suffixes in cases of name collisions
     )
 
     return drone_crowns_with_additional_attributes
-
 
 
 if __name__ == "__main__":
@@ -223,11 +237,19 @@ if __name__ == "__main__":
 
         # Create the crowns with additional attributes from the field surveyed trees
         updated_drone_crowns = match_field_and_drone_trees(
-            field_trees_path=Path(path_config.shifted_field_trees_folder, dataset + ".gpkg"),
-            drone_trees_path=Path(path_config.tree_detections_folder, dataset, "tree_tops.gpkg"),
-            drone_crowns_path=Path(path_config.tree_detections_folder, dataset, "tree_crowns.gpkg"),
+            field_trees_path=Path(
+                path_config.shifted_field_trees_folder, dataset + ".gpkg"
+            ),
+            drone_trees_path=Path(
+                path_config.tree_detections_folder, dataset, "tree_tops.gpkg"
+            ),
+            drone_crowns_path=Path(
+                path_config.tree_detections_folder, dataset, "tree_crowns.gpkg"
+            ),
             field_perim=field_perim,
         )
 
         # Save the updated crowns, knowing the output directory has already been created
-        updated_drone_crowns.to_file(Path(path_config.drone_crowns_with_field_attributes, dataset + ".gpkg"))
+        updated_drone_crowns.to_file(
+            Path(path_config.drone_crowns_with_field_attributes, dataset + ".gpkg")
+        )

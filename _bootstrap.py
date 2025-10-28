@@ -18,8 +18,8 @@ from pathlib import Path
 
 # ----- Resolve relative imports (e.g. `config/`) -----
 
-here = Path(__file__).parent.resolve() # current dir
-project_rt = here.parent # project root
+here = Path(__file__).parent.resolve()  # current dir
+project_rt = here.parent  # project root
 
 # ensure root is on sys.path
 root_str = str(project_rt)
@@ -28,7 +28,7 @@ if root_str not in sys.path:
 
 # add every first‑level folder under root
 for sub in project_rt.iterdir():
-    if sub.is_dir() and not sub.name.startswith('.'):
+    if sub.is_dir() and not sub.name.startswith("."):
         sub_str = str(sub.resolve())
         if sub_str not in sys.path:
             sys.path.insert(0, sub_str)
@@ -38,7 +38,9 @@ for sub in project_rt.iterdir():
 try:
     from configs.path_config import path_config
 except ImportError:
-    raise FileNotFoundError("ERROR: Could not find path config to add interpreters to system path")
+    raise FileNotFoundError(
+        "ERROR: Could not find path config to add interpreters to system path"
+    )
 
 # ADD OTHER SCRIPT DIRECTORIES HERE AS NEEDED
 SCRIPTS_PATHS = [
@@ -48,4 +50,3 @@ SCRIPTS_PATHS = [
 for script_path in SCRIPTS_PATHS:
     if script_path.exists():
         sys.path.insert(0, str(script_path))
-

@@ -136,7 +136,7 @@ def parse_args():
     parser.add_argument(
         "--input",
         type=str,
-        help="Path to gpkg file with cluster IDs. This is basically the output of hdbscan_spatial_clusters." \
+        help="Path to gpkg file with cluster IDs. This is basically the output of hdbscan_spatial_clusters."
         "It's needed if you only want to run the train/test split step.",
     )
 
@@ -150,7 +150,9 @@ def main():
     pairs_df["plot_id"] = pairs_df["plot_id"].apply(lambda x: f"{int(x):04d}")
 
     if args.step in ["hdbscan", "both"]:
-        plots_gdf = gpd.read_file(path_config.ground_reference_plots_file)[["plot_id", "geometry"]]
+        plots_gdf = gpd.read_file(path_config.ground_reference_plots_file)[
+            ["plot_id", "geometry"]
+        ]
         plots_gdf = plots_gdf[plots_gdf["plot_id"].isin(pairs_df["plot_id"])].copy()
         clustered_gdf = hdbscan_spatial_clusters(plots_gdf)
         clustered_gdf.to_file(path_config.hdbscan_clustered_plots)

@@ -1,13 +1,15 @@
 import argparse
+from dataclasses import MISSING, fields
 from pathlib import Path
-from dataclasses import fields, MISSING
-from typing import Optional, List, get_args, get_origin, Union
+from typing import List, Optional, Union, get_args, get_origin
+
 
 def _unwrap_optional(t):
     """Return the first non-None type if t is Optional[...]; otherwise return t unchanged."""
     if get_origin(t) is Union:
         return next((a for a in get_args(t) if a is not type(None)), str)  # noqa: E721
     return t
+
 
 def _str2bool(v: str) -> bool:
     if isinstance(v, bool):
@@ -17,6 +19,7 @@ def _str2bool(v: str) -> bool:
     if v.lower() in {"false", "f", "0", "no", "n"}:
         return False
     raise argparse.ArgumentTypeError("Boolean value expected.")
+
 
 def parse_config_args(config_class):
     """
@@ -32,7 +35,7 @@ def parse_config_args(config_class):
         # Compute the default value for help text
         if f.default is not MISSING:
             default_val = f.default
-        elif f.default_factory is not MISSING: # for default_factory attrs
+        elif f.default_factory is not MISSING:  # for default_factory attrs
             default_val = f.default_factory()
         else:
             default_val = None

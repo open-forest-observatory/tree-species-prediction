@@ -1,15 +1,14 @@
 import argparse
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 import rasterio as rio
-from shapely.geometry import Point
 from geograypher.cameras import MetashapeCameraSet
+from geograypher.constants import EXAMPLE_CAMERAS_FILENAME, EXAMPLE_DTM_FILE
 from geograypher.utils.files import ensure_containing_folder
-from geograypher.constants import (
-    EXAMPLE_CAMERAS_FILENAME,
-    EXAMPLE_DTM_FILE,
-)
+from shapely.geometry import Point
+
 
 def main(camera_file, dtm_file, output_csv, verbose):
 
@@ -18,16 +17,13 @@ def main(camera_file, dtm_file, output_csv, verbose):
 
     camera_locations = []
     for camera in camera_set.cameras:
-        location = (camera.local_to_epsg_4978_transform @ camera.cam_to_world_transform)
+        location = camera.local_to_epsg_4978_transform @ camera.cam_to_world_transform
         # Extract the first 3 values from the final column of the transformation matrix
         points_in_ECEF = location[:3, 3]
         camera_locations.append(Point(points_in_ECEF))
 
     # Step 2: Create a gdf with the camera coords in earth-centered, earth-fixed frame
-    ECEF_cam_locations = gpd.GeoDataFrame(
-        geometry=camera_locations,
-        crs=4978
-    )
+    ECEF_cam_locations = gpd.GeoDataFrame(geometry=camera_locations, crs=4978)
 
     with rio.open(dtm_file) as dtm:
         dtm_crs = dtm.crs
@@ -42,15 +38,18 @@ def main(camera_file, dtm_file, output_csv, verbose):
 
     # Verify if at least 90% of the camera points are within the DTM
     num_total = len(elevations)
-    num_valid = sum(not elev.mask[0] for elev in elevations)  # mask value is True for no data
+    num_valid = sum(
+        not elev.mask[0] for elev in elevations
+    )  # mask value is True for no data
 
     valid_ratio = num_valid / num_total
 
     print(f"Valid elevation points: {num_valid}/{num_total} ({valid_ratio:.1%})")
 
     if valid_ratio < 0.9:
-        raise ValueError("Failed. More than 10% of camera points fall outside the DTM extent.")
-
+        raise ValueError(
+            "Failed. More than 10% of camera points fall outside the DTM extent."
+        )
 
     # Step 5: Process elevations and calculate height above ground
     heights_above_ground = []
@@ -75,12 +74,16 @@ def main(camera_file, dtm_file, output_csv, verbose):
     camera_np = np.array(camera_elevations)
 
     cv = np.std(heights_np) / np.mean(heights_np)
-    correlation = np.corrcoef(ground_np, camera_np)[0, 1]  # Get value from the correlation matrix
+    correlation = np.corrcoef(ground_np, camera_np)[
+        0, 1
+    ]  # Get value from the correlation matrix
 
     # Compute sd_photogrammetry_altitude with 5th-95th percentile clipping
     lower_bound = np.percentile(heights_np, 5)
     upper_bound = np.percentile(heights_np, 95)
-    filtered_altitudes = heights_np[(heights_np >= lower_bound) & (heights_np <= upper_bound)]
+    filtered_altitudes = heights_np[
+        (heights_np >= lower_bound) & (heights_np <= upper_bound)
+    ]
     sd_photogrammetry_altitude = np.std(filtered_altitudes)
 
     if verbose:
@@ -93,7 +96,7 @@ def main(camera_file, dtm_file, output_csv, verbose):
             "median": np.median(heights_np),
             "cv": cv,
             "flight_terrain_correlation_photogrammetry": correlation,
-            "sd_photogrammetry_altitude": sd_photogrammetry_altitude
+            "sd_photogrammetry_altitude": sd_photogrammetry_altitude,
         }
 
         print("Height above ground summary stats:")
@@ -105,7 +108,7 @@ def main(camera_file, dtm_file, output_csv, verbose):
         "mean_altitude": np.mean(heights_np),
         "cv_altitude": cv,
         "flight_terrain_correlation_photogrammetry": correlation,
-        "sd_photogrammetry_altitude": sd_photogrammetry_altitude
+        "sd_photogrammetry_altitude": sd_photogrammetry_altitude,
     }
 
     # Convert to DataFrame and export as CSV
@@ -117,12 +120,25 @@ def main(camera_file, dtm_file, output_csv, verbose):
 
     print(f"Summary exported to {output_csv}")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compute height above ground for cameras and export summary statistics.")
-    parser.add_argument("--camera-file", default=EXAMPLE_CAMERAS_FILENAME, help="Path to camera file")
-    parser.add_argument("--dtm-file", default=EXAMPLE_DTM_FILE, help="Path to DTM raster file")
-    parser.add_argument("--output-csv", default="altitude_summary.csv", help="Path to save output CSV summary")
-    parser.add_argument("--verbose", action="store_true", help="Print summary statistics to stdout")
+    parser = argparse.ArgumentParser(
+        description="Compute height above ground for cameras and export summary statistics."
+    )
+    parser.add_argument(
+        "--camera-file", default=EXAMPLE_CAMERAS_FILENAME, help="Path to camera file"
+    )
+    parser.add_argument(
+        "--dtm-file", default=EXAMPLE_DTM_FILE, help="Path to DTM raster file"
+    )
+    parser.add_argument(
+        "--output-csv",
+        default="altitude_summary.csv",
+        help="Path to save output CSV summary",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Print summary statistics to stdout"
+    )
 
     args = parser.parse_args()
     main(**args.__dict__)

@@ -1,8 +1,9 @@
-import sys
-import subprocess
 import re
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
 from tqdm import tqdm
 
 import _bootstrap
@@ -24,10 +25,15 @@ mission_ids = [
 # Iterate through folders
 for mission_id in tqdm(mission_ids):
     mission_id_folder = f"{mission_id}"
-    base_remote_path = f"{path_config.all_missions_remote_folder}/{mission_id}/processed_02/full"
+    base_remote_path = (
+        f"{path_config.all_missions_remote_folder}/{mission_id}/processed_02/full"
+    )
     camera_file = f"{mission_id_folder}_cameras.xml"
     dtm_file = f"{mission_id_folder}_dtm-ptcloud.tif"
-    output_csv = path_config.mission_altitudes_folder / f"{mission_id_folder}_altitude_summary.csv"
+    output_csv = (
+        path_config.mission_altitudes_folder
+        / f"{mission_id_folder}_altitude_summary.csv"
+    )
 
     # Skip already processed missions
     if output_csv.exists():
@@ -77,6 +83,8 @@ if failed_missions:
     with path_config.missions_outside_dtm_list.open("w") as f:
         for mid, reason in failed_missions:
             f.write(f"{mid},{reason}\n")
-    print(f"Some missions failed. See '{path_config.missions_outside_dtm_list}' for details.")
+    print(
+        f"Some missions failed. See '{path_config.missions_outside_dtm_list}' for details."
+    )
 else:
     print("All missions processed successfully!")
