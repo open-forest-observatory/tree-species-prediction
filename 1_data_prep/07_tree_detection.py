@@ -19,7 +19,7 @@ import _bootstrap
 from configs.path_config import path_config
 
 CHIP_SIZE = 1000
-CHIP_STRIDE = 250
+CHIP_STRIDE = 900
 RESOLUTION = 0.2
 
 
@@ -60,10 +60,17 @@ def detect_trees(
     # Generate tree top predictions
     treetop_detections = treetop_detector.predict(dataloader)
 
-    # Remove the tree tops that were generated in the edges of tiles. This is an alternative to NMS.
+    ## Remove the tree tops that were generated in the edges of tiles. This is an alternative to NMS.
+
+    # Compute the suppresion distance so that each tile only contributes detections from its "core"
+    # area. If there is only one tile, no suppression is needed.
+    suppression_distance = (
+        0 if len(dataloader) == 1 else (chip_size - chip_stride) * resolution / 2
+    )
+    # Remove suppressed detections
     treetop_detections = remove_edge_detections(
         treetop_detections,
-        suppression_distance=(chip_size - chip_stride) * resolution / 2,
+        suppression_distance=suppression_distance,
     )
 
     treetop_detections.save(Path(save_folder, "tree_tops.gpkg"))
