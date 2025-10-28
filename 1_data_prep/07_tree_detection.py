@@ -18,8 +18,8 @@ from tree_detection_framework.preprocessing.preprocessing import (
 import _bootstrap
 from configs.path_config import path_config
 
-CHIP_SIZE = 1000
-CHIP_STRIDE = 900
+CHIP_SIZE = 2000
+CHIP_STRIDE = 1900
 RESOLUTION = 0.2
 
 
