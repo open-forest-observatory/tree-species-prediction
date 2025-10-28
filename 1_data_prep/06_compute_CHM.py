@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional, Union
 
+import geopandas as gpd
 import numpy as np
 import rioxarray
 from rasterio.enums import Resampling
@@ -15,6 +16,7 @@ def compute_CHM(
     output_chm_path: Union[str, Path],
     resolution: Optional[float] = None,
     clip_negative: bool = True,
+    spatial_clip_bounds: Optional[gpd.GeoDataFrame] = None,
 ):
     """Create a CHM by subtracting the DTM values from the DSM
 
@@ -30,6 +32,8 @@ def compute_CHM(
             the DSM. Defaults to None.
         clip_negative (Optional[bool], optional):
             Set all negative CHM values to 0. Defaults to True.
+        spatial_clip_bounds (Optional[gpd.GeoDataFrame], optional):
+            Crop the CHM to these spatial bounds. Defaults to None.
     """
     # Read the data
     dtm = rioxarray.open_rasterio(dtm_path, masked=True)
@@ -74,6 +78,12 @@ def compute_CHM(
         # Set all negative values to zero
         chm = chm.clip(min=0)
 
+    # Crop to spatial bounds if needed
+    if spatial_clip_bounds is not None:
+        chm = chm.rio.clip(
+            spatial_clip_bounds.geometry.values, crs=spatial_clip_bounds.crs
+        )
+
     # Save to disk
     Path(output_chm_path).parent.mkdir(parents=True, exist_ok=True)
     chm.rio.to_raster(output_chm_path)
@@ -87,10 +97,14 @@ if __name__ == "__main__":
         )
     # List all the folders, corresponding to photogrammetry for a nadir-oblique pair
     photogrammetry_run_folders = path_config.photogrammetry_folder.glob("*_*")
+
+    all_plot_bounds = gpd.read_file(path_config.ground_reference_plots_file)
     # Iterate over the folders
     for photogrammetry_run_folder in photogrammetry_run_folders:
         # The last part of the path is the <nadir id>_<oblique id> pair
         run_ID = photogrammetry_run_folder.parts[-1]
+        # Get the field reference plot ID
+        plot_ID = run_ID.split("_")[0]
 
         # This is where all the data products are saved to
         photogrammetry_products_folder = Path(photogrammetry_run_folder, "output")
@@ -103,9 +117,19 @@ if __name__ == "__main__":
             print(f"Skipping run {run_ID} because of missing data")
             continue
 
+        # Extract the plot bounds of the given plot
+        plot_bounds = all_plot_bounds.query("plot_id == @plot_ID")
+        # This is a hack because the CRS should be computed in the future
+        plot_bounds.to_crs(26910, inplace=True)
+        # Add 50 buffer
+        plot_bounds.geometry = plot_bounds.buffer(50)
+
         # All the outputs will be saved to one folder
         output_chm_path = Path(path_config.chm_folder, f"{run_ID}.tif")
         # Run the computation
         compute_CHM(
-            dsm_path=dsm_file, dtm_path=dtm_file, output_chm_path=output_chm_path
+            dsm_path=dsm_file,
+            dtm_path=dtm_file,
+            output_chm_path=output_chm_path,
+            spatial_clip_bounds=plot_bounds,
         )
