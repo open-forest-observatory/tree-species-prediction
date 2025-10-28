@@ -3,7 +3,6 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
-
 # Library imports
 from geograypher.cameras.derived_cameras import MetashapeCameraSet
 from geograypher.entrypoints.render_labels import render_labels

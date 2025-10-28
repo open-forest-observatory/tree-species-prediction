@@ -10,11 +10,8 @@ import pandas as pd
 
 # Add folder where constants.py is to system search path
 sys.path.append(str(Path(Path(__file__).parent, "..").resolve()))
-from constants import (
-    ALL_MISSIONS_METADATA_FILE,
-    DRONE_MISSIONS_WITH_ALT_FILE,
-    MISSION_ALTITUDES_FOLDER,
-)
+from constants import (ALL_MISSIONS_METADATA_FILE,
+                       DRONE_MISSIONS_WITH_ALT_FILE, MISSION_ALTITUDES_FOLDER)
 
 metadata_gdf = gpd.read_file(ALL_MISSIONS_METADATA_FILE)
 
