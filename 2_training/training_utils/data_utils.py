@@ -1,11 +1,13 @@
 import torch
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import Subset, DataLoader, WeightedRandomSampler
 import geopandas as gpd
+import pandas as pd
 import numpy as np
 from pathlib import Path
 from collections import defaultdict, Counter
 import copy
 
+from configs.path_config import path_config
 from configs.model_config import model_config
 from data.dataset import collate_batch
 
@@ -76,18 +78,6 @@ def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_s
 
     return train_idxs, val_idxs
 
-def summarize_mixed_label_trees(dset):
-    per_tree = defaultdict(list)
-    for m in dset.meta:
-        per_tree[m['unique_treeID']].append(m['label_idx'])
-    #mixed = {tid: Counter(lbls) for tid, lbls in per_tree.items() if len(set(lbls)) > 1}
-    mixed = {}
-    for tid, lbls in per_tree.items():
-        if len(set(lbls)) > 1: # if there's multiple diff labels for one tree
-            lbls_str = [dset.idx2label_map[lbl] for lbl in lbls]
-            mixed[tid] = Counter(lbls_str)
-    return mixed
-
 def stratified_split_by_ID(
     dset,
     val_ratio=0.2,
@@ -111,10 +101,6 @@ def stratified_split_by_ID(
         in val are as close as possible to `val_ratio * n_samples_in_class`.
       - Remaining trees go to train. Final shuffle keeps RNG reproducible.
     """
-    # debug, looks for trees with conflicting IDs
-    #mixed = summarize_mixed_label_trees(dset)
-    #print(mixed)
-
     rng = torch.Generator().manual_seed(seed)
     pool = list(range(len(dset))) if (sample_idxs_pool is None) else list(sample_idxs_pool)
 
@@ -251,6 +237,54 @@ def stratified_split_by_ID(
 
     return train_idxs, val_idxs
 
+# TODO: implement the class balancing factors here that are in the other stratified split fns
+def stratified_split_by_plot(dset, per_class_sample_limit_factor=None, min_samples_per_class=None, suppress_summary_print=False):
+    split_df = pd.read_csv(path_config.train_test_split_file)
+    target_cols = ['plot_id', 'mission_id_hn', 'mission_id_lo'] # these cols contain the info to construct the indv gpkg file name
+
+    train_rows = split_df[split_df.split == 'train']
+    train_dset_names = train_rows.apply(lambda row: f"{int(row[target_cols[0]]):04d}_{int(row[target_cols[1]]):06d}_{int(row[target_cols[2]]):06d}", axis=1).tolist()
+
+    test_rows = split_df[split_df.split == 'test']
+    test_dset_names = test_rows.apply(lambda row: f"{int(row[target_cols[0]]):04d}_{int(row[target_cols[1]]):06d}_{int(row[target_cols[2]]):06d}", axis=1).tolist()
+
+    train_idxs, test_idxs, unknown = [], [], []
+    for i, meta_dict in enumerate(dset.meta):
+        img_src = meta_dict['dset']
+        if img_src in test_dset_names:
+            test_idxs.append(i)
+        elif img_src in train_dset_names:
+            train_idxs.append(i)
+        
+        else:
+            unknown.append(i)
+
+    print(f"****** {len(train_idxs)} - {len(test_idxs)}")
+
+    # ensure class coverage between plots
+    train_labels = {dset.meta[i]['label_idx'] for i in train_idxs}
+    test_labels = {dset.meta[i]['label_idx'] for i in test_idxs}
+
+    labels_only_in_train = sorted(train_labels - test_labels)
+    labels_only_in_test = sorted(test_labels - train_labels)
+    
+    print(f"[split_by_dataset_id] train imgs={len(train_idxs)}, test imgs={len(test_idxs)}, unknown dsets={len(unknown)}")
+    if labels_only_in_train:
+        print(f"Classes ONLY in TRAIN (absent in TEST): {labels_only_in_train}")
+    if labels_only_in_test:
+        print(f"Classes ONLY in TEST (absent in TRAIN): {labels_only_in_test}")
+    if unknown:
+        ex = sorted(set(unknown))[:5]
+        print(f"Warning: {len(unknown)} samples had dset names not found in the split CSV. Examples: {ex}")
+
+    # summary of train/val splits after stratified split and applying any min/max n_samples
+    if not suppress_summary_print:
+        summarize_split_by_tree(dset, train_idxs, name="train")
+        summarize_split_by_tree(dset, test_idxs,   name="val")
+        check_no_tree_overlap(dset, train_idxs, test_idxs)
+
+    return torch.tensor(train_idxs), torch.tensor(test_idxs)
+
 def summarize_split_by_tree(dset, idxs, name="split"):
     """
     Print, per class, the number of trees and images, plus per-tree count stats.
@@ -296,32 +330,130 @@ def check_no_tree_overlap(dset, train_idxs, val_idxs):
     else:
         print("OK: no tree overlap between TRAIN and VAL.")
 
-def assemble_dataloaders(tree_dset, train_transform, val_transform, return_idxs=False, idxs_pool=None):
+def cap_indices_evenly_by_class(
+    idxs: list[int],
+    label_lookup: list[int],     # label_lookup[i] = label_idx for dataset index i
+    upper_limit: int,
+    seed: int = 42,              # keep it deterministic
+) -> list[int]:
+    """Return up to `upper_limit` idxs with as even a per-class distribution as possible."""
+    if upper_limit <= 0 or len(idxs) <= upper_limit:
+        return idxs
+
+    # group indices by class present in `idxs`
+    cls2idxs = defaultdict(list)
+    for i in idxs:
+        cls2idxs[label_lookup[i]].append(i)
+
+    # (optional) shuffle within each class for fair sampling, but deterministic
+    rng = np.random.RandomState(seed)
+    for cls in cls2idxs:
+        rng.shuffle(cls2idxs[cls])
+
+    classes = list(cls2idxs.keys())
+    C = len(classes)
+    if C == 0:
+        return []
+
+    # base quota + remainder
+    base = max(upper_limit // C, 0)
+    rem  = max(upper_limit - base * C, 0)
+
+    # first pass: take min(base, available) from each class
+    take = {cls: min(base, len(cls2idxs[cls])) for cls in classes}
+    taken_total = sum(take.values())
+
+    # distribute remaining budget over a few passes until we run out of remainder or capacity
+    while rem > 0:
+        any_added = False
+        for cls in classes:
+            if rem == 0:
+                break
+            if take[cls] < len(cls2idxs[cls]):
+                take[cls] += 1
+                rem -= 1
+                any_added = True
+        if not any_added:
+            break  # no more capacity anywhere
+
+    # collect selected indices, then (optionally) globally shuffle for mixing
+    selected = []
+    for cls in classes:
+        selected.extend(cls2idxs[cls][:take[cls]])
+    rng.shuffle(selected)
+    return selected
+
+def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, upper_limit_n_samples=0, return_idxs=False, idxs_pool=None):
     train_cp = copy.copy(tree_dset)
     val_cp = copy.copy(tree_dset)
 
+    split_methods = { # choose appropriate fn for splitting data based on model config arg
+        'plot': stratified_split_by_plot,
+        'tree': stratified_split_by_ID,
+        'image': stratified_split
+    }
+
     # train/val split evenly among each label
-    train_dset_idxs, val_dset_idxs = stratified_split_by_ID(
+    train_dset_idxs, val_dset_idxs = split_methods[split_method](
         tree_dset,
         per_class_sample_limit_factor=model_config.max_class_imbalance_factor,
         min_samples_per_class=model_config.min_samples_per_class
     ) 
 
+    # optionally enforce overall cap with even per-class distribution (applied separately to train/val)
+    if upper_limit_n_samples > 0:
+        # lookup: dataset index -> label
+        lbl_lookup = [m["label_idx"] for m in tree_dset.meta]
+
+        train_dset_idxs = cap_indices_evenly_by_class(
+            train_dset_idxs, lbl_lookup, upper_limit_n_samples
+        )
+        val_dset_idxs = cap_indices_evenly_by_class(
+            val_dset_idxs, lbl_lookup, upper_limit_n_samples
+        )
+
     # swap default transform of dataset class with the ones just built
-    train_cp.transform = train_transform
-    val_cp.transform = val_transform
+    train_cp.static_transform = static_T
+    train_cp.random_transform = train_T
+    val_cp.static_transform = static_T
+    val_cp.random_transform = val_T
 
     train_dset = Subset(train_cp, train_dset_idxs)
     val_dset = Subset(val_cp, val_dset_idxs)
 
-    train_loader = DataLoader(
-        train_dset,
-        batch_size=model_config.batch_size,
-        shuffle=True,
-        num_workers=model_config.num_workers,
-        pin_memory=True,
-        collate_fn=collate_batch
-    )
+    if model_config.use_class_balancing:
+        # get labels of training subset
+        print("Using class balancing...")
+        train_labels = [tree_dset.meta[i]["label_idx"] for i in train_dset_idxs]
+
+        # compute weights (inverse class frequency)
+        class_counts = np.bincount(train_labels)
+        class_weights = 1.0 / (class_counts + 1e-6)
+        sample_weights = [class_weights[label] for label in train_labels]
+
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True
+        )
+
+        train_loader = DataLoader(
+            train_dset,
+            batch_size=model_config.batch_size,
+            sampler=sampler,
+            num_workers=model_config.num_workers,
+            pin_memory=True,
+            collate_fn=collate_batch
+        )
+    else:
+        train_loader = DataLoader(
+            train_dset,
+            batch_size=model_config.batch_size,
+            shuffle=True,
+            num_workers=model_config.num_workers,
+            pin_memory=True,
+            collate_fn=collate_batch
+        )
 
     val_loader = DataLoader(
         val_dset,

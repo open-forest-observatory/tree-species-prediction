@@ -41,7 +41,7 @@ def assemble_param_groups(tree_model):
         # determine group from above dict keys -> head_ or backbone_ + decay or nodecay
         group_key = ('backbone_' if is_backbone else 'head_') + ('decay' if decay else 'nodecay')
         groups[group_key]['params'].append(param)
-        groups[group_key]['names'].append(param)
+        groups[group_key]['names'].append(name)
 
     return list(groups.values()), groups
 
@@ -50,19 +50,20 @@ def init_training():
 
     tree_dset = TreeDataset( # init dataset
         imgs_root=path_config.cropped_tree_training_images / 'labelled',
-        gpkg_dir=path_config.drone_crowns_with_field_attributes
+        gpkg_dir=path_config.drone_crowns_with_field_attributes,
+        cache_dir=path_config.static_transformed_images_cache_dir,
     )
     
     # init classifier
     tree_model = TreeSpeciesClassifierFromPretrained(
         path_config.pretrained_model_path, # plant clef 2024, 'only_classifier_then_all' -> fine tuned backbone
-        backbone_name="vit_base_patch14_reg4_dinov2.lvd142m",
+        backbone_name=model_config.backbone_name,
         num_classes=len(tree_dset.label2idx_map),
         backbone_is_trainable=False, # with already tuned backbone, we won't touch it at least to start (can further tune in later epochs)
     ).to(device)
 
     # img transforms to give to dataset class to standardize input imgs to the model's liking
-    train_transform, val_transform = build_transforms(
+    static_T, random_train_T, random_val_T = build_transforms(
         target=model_config.input_img_dim[0],
         long_side_thresh=model_config.downsample_threshold,
         downsample_to=model_config.downsample_to,
@@ -70,7 +71,16 @@ def init_training():
         std=tree_model.backbone_data_cfg['std']
     )
 
-    train_loader, val_loader = assemble_dataloaders(tree_dset, train_transform, val_transform, return_idxs=False, idxs_pool=None)
+    train_loader, val_loader = assemble_dataloaders(
+        tree_dset,
+        static_T,
+        random_train_T,
+        random_val_T,
+        model_config.data_split_level,
+        upper_limit_n_samples=model_config.max_total_samples,
+        return_idxs=False,
+        idxs_pool=None
+    )
 
     # controls early stopping of training if performance plateaus
     # disabled if model_config.patience == 0
@@ -107,5 +117,5 @@ def init_training():
         # use just cosine annealing if no warmup
         scheduler = CosineAnnealingLR(optim, T_max=model_config.epochs)
 
-    return tree_model, tree_dset, train_loader, val_loader, train_transform, val_transform, \
+    return tree_model, tree_dset, train_loader, val_loader, static_T, random_train_T, random_val_T, \
     optim, criterion, scheduler, scaler, device, early_stopper

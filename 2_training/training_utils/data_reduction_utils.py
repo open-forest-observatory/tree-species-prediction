@@ -21,6 +21,7 @@ def generate_params(**params):
     for combo in generate_params(reduction_ratio=[0.25, 0.5], warm_start_epoch=[100, 200]):
         ... do stuf with combo ...
     """
+    # TODO: Switch to sklearn.paramgrid
     keys, values = zip(*params.items()) if params else ([], [])
     for combo in product(*values):
         yield dict(zip(keys, combo))
@@ -136,6 +137,7 @@ def gradsel_reduce(
         base_dataset,
         criterion,
         epoch_idx,
+        static_transform,
         train_transform,
         val_transform,
         reduction_ratio,
@@ -193,7 +195,7 @@ def gradsel_reduce(
     gc.collect()
     torch.cuda.empty_cache()
 
-    train_loader, val_loader = assemble_dataloaders(base_dataset, train_transform, val_transform, return_idxs=False, idxs_pool=current_subset.indices)
+    train_loader, val_loader = assemble_dataloaders(base_dataset, static_transform, train_transform, val_transform, return_idxs=False, idxs_pool=current_subset.indices)
 
     # jaccard similarity compares how different set A (previously chosen subset) is from set B (newly chosen subset)
     if prev_subset_idxs is not None:

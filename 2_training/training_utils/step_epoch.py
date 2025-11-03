@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 from configs.model_config import model_config
 
-def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, early_stopper=None, training=False, epoch_num=None):
+def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, training=False, epoch_num=None):
     # same fn used for training and validation, so setup accordingly
     if training:
         tree_model.train()
@@ -26,9 +26,9 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
 
     # iterate through batches
     pbar = tqdm(dataloader, desc=pbar_msg)
-    for batch_idx, (imgs, labels, metadata) in enumerate(pbar):
-        imgs = imgs.to(device, non_blocking=False)
-        labels = labels.to(device, non_blocking=False)
+    for batch_idx, (imgs, labels, _) in enumerate(pbar):
+        imgs = imgs.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
         batch_size = labels.size(0)
 
         # forward with optional automatic mixed precision
@@ -43,6 +43,7 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
                 # scale back to fp32 and then backprop
                 scaler.scale(loss).backward()
                 scaler.step(optim) # step down the gradient
+                scaler.update()
             else:
                 loss.backward() # back propagation
                 optim.step() # step down the gradient
@@ -106,9 +107,5 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
         'recall': recall,               # sensitivity; high recall -> minimize false negatives
         'f1': f1,                       # balance of precision and recall
     }
-
-    # early stopping check -> parent train fn should handle the early_stopper.stop_now
-    if early_stopper is not None and early_stopper.enabled:
-        stop_now, _ = early_stopper.step(metrics)
 
     return metrics

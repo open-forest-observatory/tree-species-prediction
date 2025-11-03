@@ -59,14 +59,14 @@ class PathConfig:
         preprocessing_folder, "ofo-all-missions-metadata-with-altitude.gpkg"
     )
 
-    all_missions_metadata_file = Path("ofo-share/catalog-data-prep/01_raw-imagery-ingestion/metadata/3_final/ofo-all-missions-metadata.gpkg")
+    all_missions_metadata_file: Path = Path("ofo-share/catalog-data-prep/01_raw-imagery-ingestion/metadata/3_final/ofo-all-missions-metadata.gpkg")
 
     ground_plot_drone_mission_matches_file: Path = Path(
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )
 
-    hdbscan_clustered_plots = Path(intermediate_data_folder, "hdbscan_clustered_plots.gpkg")
-    train_test_split_file = Path(intermediate_data_folder, "train_test_split.csv")
+    hdbscan_clustered_plots: Path = Path(intermediate_data_folder, "hdbscan_clustered_plots.gpkg")
+    train_test_split_file: Path = Path(intermediate_data_folder, "train_test_split.csv")
     
     drone_images_root: Path = Path(
         "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
@@ -89,18 +89,22 @@ class PathConfig:
     )
 
     # rendered instance IDs (.tif) files (masks of tree ids corresponding to raw images)
-    rendered_instance_ids_path = Path(intermediate_data_folder, 'rendered_instance_ids', 'renders')
+    rendered_instance_ids_path: Path = intermediate_data_folder / 'rendered_instance_ids' / 'renders'
 
     # output of 12_tree_crops.py
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
-    cropped_tree_training_images = intermediate_data_folder / 'cropped_trees'
+    cropped_tree_training_images: Path = intermediate_data_folder / 'cropped_trees'
 
     # plant clef 2024 pretrained model as a base
-    pretrained_model_path = intermediate_data_folder / 'pretrained_models' / 'model_best_vit_base_patch14_reg4_dinov2_lvd142m_pc24_onlyclassifier_then_all.pth.tar'
+    pretrained_model_path: Path = intermediate_data_folder / 'pretrained_models' / 'model_best_vit_base_patch14_reg4_dinov2_lvd142m_pc24_onlyclassifier_then_all.pth.tar'
 
     # output of model trainings
     # temporarily relative path until testing complete
-    training_ckpt_dir = Path("2_training/ckpts")
+    training_ckpt_dir: Path = Path("2_training/ckpts")
+
+    # cache of static image transformations (resizing to input dim)
+    # kept local to not interfere with others' runs
+    static_transformed_images_cache_dir: Path = Path("2_training/cache")
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""

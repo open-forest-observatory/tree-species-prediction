@@ -16,6 +16,9 @@
 # training ckpt saving dir
 /2_training/ckpts/
 
+# cache for statically transformed imgs
+/2_training/cache/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
