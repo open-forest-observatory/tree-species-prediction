@@ -1,7 +1,9 @@
 import torch
+from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from tqdm import tqdm
+import numpy as np
 from datetime import datetime
 import json, yaml
 from dataclasses import asdict
@@ -11,6 +13,7 @@ import copy
 import _bootstrap
 from configs.model_config import model_config
 from configs.path_config import path_config
+from configs.data_reduction_config import dr_config
 from training_utils.initializers import init_training
 from training_utils.step_epoch import _step_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, stratified_split
@@ -19,11 +22,11 @@ from training_utils.data_reduction_utils import gradsel_reduce, _is_subset_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, summarize_split_by_tree, check_no_tree_overlap
 
 ''' TODO:
+- !! Gather gradients for data reduction inside step epoch to avoid extra forward pass !!
+    - will require subbatch size to be same as batch size
+    - ensure dataset class can return global idx
+    - flatten and store grads with global idxs in _step_epoch() before optim.step()
 - context manager for safe exiting on training
-- plotting/visualizing of metrics and loss
-- tree level prediction
-    - when model trained, infer on model to get species for all cropped imgs of each tree,
-    and take majority vote on which species predicted most
 '''
 
 def train():
@@ -33,12 +36,23 @@ def train():
     unique_species_labels = get_classes_from_gpd_file_paths(gpkg_dsets)
 
     # init everything required for model training
-    tree_model, tree_dset, train_loader, val_loader, static_transform, train_transform, val_transform, \
-    optim, criterion, scheduler, scaler, device, early_stopper = init_training()
+    tree_model, tree_dset, train_loader, val_loader, train_subset, val_subset, static_transform, \
+    train_transform, val_transform, optim, criterion, scheduler, scaler, device, early_stopper = init_training()
 
     # for data reduction
-    full_dset_val_transform = copy.copy(tree_dset)
-    full_dset_val_transform.transform = val_transform
+    if model_config.use_data_reduction:
+        # for choosing optimal data points we only want to look at transformed imgs w/o rng dependence (just scaling and normalizing)
+        dset_copy = copy.copy(tree_dset)
+        train_dset_val_transform = Subset(dset_copy, train_subset.indices)
+        train_dset_val_transform.dataset.static_transform = static_transform
+        train_dset_val_transform.dataset.random_transform = val_transform
+
+        # pool of idxs for data reduction to choose from should be shuffled since OMP is greedy,
+        # but we only want to shuffle once so it is more liable to converge to a consistent subset
+        rng = np.random.default_rng()
+        perm = rng.permutation(len(train_dset_val_transform)) # idxs local to the subset (not the global idxs that ref the full dset)
+        
+        prev_subset_idxs = None # for tracking each iteration's similarity
 
     # for naming ckpt dir
     ts = datetime.now().strftime('%m%d-%H%M%S')
@@ -52,7 +66,6 @@ def train():
         yaml.dump(cfg_dict, cfg_file, default_flow_style=False)
 
     n_layers_unfrozen = 0
-    prev_subset_idxs = None # for data reduction
     for epoch in range(model_config.epochs):
         # toggle backbone trainability and add its params to optimizer once `freeze_backbone_epochs` reached
         if epoch >= model_config.freeze_backbone_epochs and n_layers_unfrozen <= model_config.n_last_layers_to_unfreeze:
@@ -61,8 +74,6 @@ def train():
             early_stopper.enabled = False
         else:
             early_stopper.enabled = True
-
-        # TODO keep early_stopper disabled until after opening all layers, since it dips for a bit when unfreezing
             
         # train one step
         train_metrics = _step_epoch(
@@ -98,24 +109,23 @@ def train():
         tb_writer.add_scalar("Learning_Rate", scheduler.get_last_lr()[0], epoch + 1)
 
         # optional gradient based subset selection with OMP (data reduction)
-        if model_config.use_data_reduction and _is_subset_epoch(epoch): # check if time for subset
-            from configs.data_reduction_config import dr_config # only need to import if opted to use data reduction
-            
-            new_train_loader, new_val_loader, chosen_idxs_pool = gradsel_reduce(
+        if model_config.use_data_reduction and _is_subset_epoch(epoch): # check if time for subset            
+            new_train_loader, chosen_idxs_pool = gradsel_reduce(
                 model=tree_model,
-                base_dataset=full_dset_val_transform,
+                dset_view=train_dset_val_transform,     # subset containing training samples but with deterministic (validation) transforms
+                train_dset=train_subset,                # subset with training samples and training transforms
                 criterion=criterion,
-                epoch_idx=epoch,
+                save_fp=cur_training_out_dir / 'subsets' / f'selection_epoch{epoch+1}.npy',
                 static_transform=static_transform,
                 train_transform=train_transform,
-                val_transform=val_transform,
                 reduction_ratio=dr_config.subset_ratio,
                 subbatch_size=dr_config.subbatch_size,
+                preshuffled_idxs=perm,                  # local idxs (w.r.t. the subset)
                 device=device,
-                prev_subset_idxs=prev_subset_idxs
+                prev_subset_idxs=prev_subset_idxs       # global idxs (w.r.t. to the original dataset)
             )
-            del train_loader, val_loader
-            train_loader, val_loader = new_train_loader, new_val_loader
+            del train_loader
+            train_loader = new_train_loader
             prev_subset_idxs = chosen_idxs_pool
 
         # save ckpt for future analysis

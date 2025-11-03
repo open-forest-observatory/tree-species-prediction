@@ -27,6 +27,7 @@ class TreeModelConfig:
     """
     # input data/data preprocessing
     input_img_dim: tuple[int, int] = (518, 518) # size to scale input imgs to before giving to model
+    val_ratio: float = 0.2                      # ratio of data to use for validation set; ignored if `data_split_level == 'plot'`
     downsample_threshold: int = 574             # if longer edge of input img > this, downsample instead of just crop
     downsample_to: int = 518                    # size to downsample long edge too before padding
     num_workers: int = 8                        # workers for the dataloader
@@ -39,7 +40,7 @@ class TreeModelConfig:
     
     # determines how to split data into train/test
     # caution with plot level split -> currently no datasets marked as 'test' have been processed by steps prior to this training
-    data_split_level: Literal['plot', 'tree', 'image'] = 'plot'
+    data_split_level: Literal['plot', 'tree', 'image'] = 'tree'
     
     # epoch loop iterations
     epochs: int = 25                            # num passes through the training dataset

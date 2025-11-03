@@ -4,10 +4,12 @@ import gc
 import time
 from itertools import product
 import math
+import numpy as np
 from tqdm import tqdm
 import copy
 
 from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
+from data.dataset import collate_batch
 from training_utils.omp import omp_select
 from training_utils.data_utils import assemble_dataloaders
 from training_utils.metrics import compute_pairwise_jaccard_similarity
@@ -42,6 +44,15 @@ def _flatten_param_grads(model, param_keep_type=None):
 
     return torch.cat(keep, dim=0)
 
+def save_selection(out_fp, idxs):
+    out_dir = out_fp.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.save(out_fp, np.array(idxs, dtype=np.int32))
+
+def load_selection(out_dir, epoch):
+    fp = Path(out_dir) / 'subsets' / f"selection_epoch{epoch}.npy"
+    return np.load(fp)
+
 # Function to chunk a list into pieces of size chunk_size
 def chunk_list(lst, chunk_size):
     for start in range(0, len(lst), chunk_size):
@@ -53,7 +64,9 @@ def gather_gradients(
     criterion,
     device,
     subbatch_size,
-    batch_size
+    batch_size,
+    preshuffled_idxs=None   # local idxs to subset; if idxs shuffled once before hand, 
+                            # more likely to converge to consistent subset choices
 ):
     """
     3 deep for loops looks bad I know, but I swear it's still just O(n),
@@ -74,39 +87,53 @@ def gather_gradients(
     model_copy = copy.deepcopy(model).to(device)
     model_copy.eval() # eval mode for consistency
 
+    # figure out if we’re looking at a Subset view
+    is_subset = isinstance(dataset, Subset)
+    base_ds = dataset.dataset if is_subset else dataset
+    idx_list = dataset.indices if is_subset else list(range(len(dataset)))  # GLOBAL ids if Subset
+
     subbatch_grads = [] # store gradients calculated for each subbatch
-    subbatch_idxs = [] # store sample idxs of samples in subbatches relative to whole dset
+    subbatch_global_idxs = [] # store sample idxs of samples in subbatches relative to whole dset
 
     # idxs of all samples in dataset
     # idx tracking of samples is needed so we can subset samples in dataset correctly,
     # when using subbatch for gradient approximations
-    all_idxs = list(range(len(dataset)))
-    N = len(all_idxs)
+    # note: global -> idxs of the whole dataset; local -> idxs of the subset being selected from (training dset since val dset unaffected)
+    if preshuffled_idxs is None:
+        all_local_idxs = list(range(len(dataset)))
+    else:
+        all_local_idxs = list(map(int, preshuffled_idxs))
+    N = len(all_local_idxs)
 
     # iterate over idxs of batches
     # batch_idxs is a list of sample idxs of len batch_size
-    for batch_idxs in tqdm(chunk_list(all_idxs, batch_size), total=math.ceil(N / batch_size), desc="Gathering gradients for batches"):
+    for batch_local_idxs in tqdm(chunk_list(all_local_idxs, batch_size), total=math.ceil(N / batch_size), desc="Gathering gradients for batches"):
         
         # Now split batch_idxs into smaller slices of size minibatch_size
-        for cur_subbatch_idxs in chunk_list(batch_idxs, subbatch_size):
-            
+        for cur_subbatch_local_idxs in chunk_list(batch_local_idxs, subbatch_size):
             # get all samples of this current subbatch
-            cur_subbatch_imgs_list, cur_subbatch_labels_list = [], []
-            for i in cur_subbatch_idxs:
-                cur_subbatch_imgs_list.append(dataset[i][0])
-                cur_subbatch_labels_list.append(dataset[i][1])
+            imgs, labels, cur_sub_global = [], [], []
+            
+            for loc_i in cur_subbatch_local_idxs:
+                # map local to global idx
+                glob_i = idx_list[loc_i] if is_subset else loc_i
+                cur_sub_global.append(glob_i)
 
-            cur_subbatch_imgs = torch.stack(cur_subbatch_imgs_list, dim=0).to(device, non_blocking=True)
-            cur_subbatch_labels = torch.tensor(cur_subbatch_labels_list, device=device)
+                # fetch from dset so transforms applied (val view tfs)
+                cur_img, cur_lbl = dataset[loc_i][0], dataset[loc_i][1]
+                imgs.append(cur_img)
+                labels.append(cur_lbl)
+
+            X = torch.stack(imgs, dim=0).to(device, non_blocking=True)
+            y = torch.tensor(labels, device=device, dtype=torch.long)
 
             # Zero old grads
             model_copy.zero_grad(set_to_none=True)
             
             # shape: (subbatch_size, num_classes); or  (subbatch_size % num_subbatches, num_classes) if last subbatch
-            logits = model_copy(cur_subbatch_imgs) # Forward pass for this sub-batch
+            logits = model_copy(X) # Forward pass for this sub-batch
 
-            # WGAN real term = -mean(D(real)); not using mone as done in wgan train loop
-            loss = criterion(logits, cur_subbatch_labels)
+            loss = criterion(logits, y)
             loss.backward() # backprop to compute gradients
 
             # Flatten param grads
@@ -114,7 +141,7 @@ def gather_gradients(
             grads_flat = _flatten_param_grads(model_copy, param_keep_type=param_keep_type)
 
             subbatch_grads.append(grads_flat.detach().cpu())
-            subbatch_idxs.append(cur_subbatch_idxs)
+            subbatch_global_idxs.append(cur_sub_global)
 
     # list -> tensor
     grads_matrix = torch.stack(subbatch_grads, dim=0) # shape: (N, param_dim)
@@ -125,7 +152,8 @@ def gather_gradients(
     del model_copy
     gc.collect()
     torch.cuda.empty_cache()
-    return grads_matrix, grad_sum, subbatch_idxs
+
+    return grads_matrix, grad_sum, subbatch_global_idxs
 
 def _is_subset_epoch(epoch):
     return (epoch <= model_config.epochs and # if we haven't trained for the full spec'd num epochs and,
@@ -134,20 +162,21 @@ def _is_subset_epoch(epoch):
 
 def gradsel_reduce(
         model,
-        base_dataset,
+        dset_view,              # deterministic dataset/subset to gather gradients and choose points from
+        train_dset,             # same samples as in `dset_vew` but with training transforms (current training split)
         criterion,
-        epoch_idx,
         static_transform,
         train_transform,
-        val_transform,
         reduction_ratio,
         subbatch_size,
         device,
+        save_fp=None,
+        preshuffled_idxs=None,
         prev_subset_idxs=None # for jaccard sim comparison
     ): 
     # ensure subbatch budget won't be 0, 
     # i.e. |_(reduction ratio * num_batches)_| > 0
-    assert int(reduction_ratio * len(base_dataset)) >= 1, f"ERROR: Reduction ratio too small for dataset size and/or batch_size!"
+    assert int(reduction_ratio * math.ceil(len(dset_view) / subbatch_size)) >= 1, f"ERROR: Reduction ratio too small for dataset size and/or batch_size!"
     print(f"Will select subsets every {dr_config.epoch_selection_interval} epochs, warm start: {dr_config.num_warm_start_epochs}.")
 
     # TODO: integrate performance metrics
@@ -158,51 +187,65 @@ def gradsel_reduce(
     t0_subset = time.time()  
     
     # gather gradients of Discriminator on real data (since that's what we are subsetting)
-    grad_mat, grad_sum, subbatch_idxs = gather_gradients(
+    grad_mat, grad_sum, subbatch_global_idxs = gather_gradients(
         model,
-        base_dataset,
+        dset_view,
         criterion,
         device,
         subbatch_size,
-        model_config.batch_size
+        model_config.batch_size,
+        preshuffled_idxs=preshuffled_idxs
     )
+
+    print(f"*** Gradient Matrix shape: {grad_mat.shape} - Gradient sums (residuals for OMP): {grad_sum}")
     
     # determine budget based on reduction ratio and subbatch size'
     # this is how many subbatches worth of samples we can take
     budget = int(reduction_ratio * grad_mat.shape[0])
     print(budget, grad_mat.size())
-    print("Solving OMP system... (choosing best gradient approximating subsets)")
     
     # run Orthogonal Matching Pursuit to determine best idxs using gradient matrix and gradient sum
+    print("Solving OMP system... (choosing best gradient approximating subsets)")
     new_subbatch_idxs = omp_select(grad_mat, grad_sum, budget, device)
-    print(f"Chose: {len(new_subbatch_idxs)} subbatches ({len(new_subbatch_idxs) * subbatch_size}) out of {len(base_dataset)}")
+    subset_sel_time = time.time() - t0_subset # track time for selecting subset of data
+    print(f"Chose: {len(new_subbatch_idxs)} subbatches ({len(new_subbatch_idxs) * subbatch_size}) out of {len(dset_view)}")
 
     # get actual sample idxs from subbatch idxs
-    new_idxs = []
+    new_global_idxs = []
     for subbatch_i in new_subbatch_idxs:
         # extend with sample idxs from idxs of chosen subsets
-        new_idxs.extend(subbatch_idxs[subbatch_i])
+        new_global_idxs.extend(subbatch_global_idxs[subbatch_i])
 
-    # Rebuild the subset/dataloader with the new indices
-    current_subset = Subset(base_dataset, new_idxs)
+    # init new subset and dataloader with chosen idxs
+    train_base = train_dset.dataset
+    train_base.static_transform = static_transform
+    train_base.random_transform = train_transform
 
-    subset_sel_time = time.time() - t0_subset # track time for selecting subset of data
-    print(f"New subset has {len(current_subset)} items.\nSubset selection took {subset_sel_time:.4f} seconds to compute")
+    new_train_subset = Subset(train_base, new_global_idxs)
+    new_train_loader = DataLoader
 
-    #TODO: Save computed subset idxs
+    print(f"New subset has {len(new_train_subset.indices)} items.\nSubset selection took {subset_sel_time:.4f} seconds to compute")
 
-    del grad_mat, grad_sum, subbatch_idxs
+    # save computed subset idxs
+    save_selection(save_fp, new_global_idxs)
+
+    del grad_mat, grad_sum
     gc.collect()
     torch.cuda.empty_cache()
 
-    train_loader, val_loader = assemble_dataloaders(base_dataset, static_transform, train_transform, val_transform, return_idxs=False, idxs_pool=current_subset.indices)
+    new_train_loader = DataLoader(
+        new_train_subset,
+        batch_size=model_config.batch_size,
+        shuffle=True,
+        num_workers=model_config.num_workers,
+        pin_memory=True,
+        collate_fn=collate_batch
+    )
 
     # jaccard similarity compares how different set A (previously chosen subset) is from set B (newly chosen subset)
     if prev_subset_idxs is not None:
-        jaccard_sim = compute_pairwise_jaccard_similarity(prev_subset_idxs, current_subset.indices)
+        jaccard_sim = compute_pairwise_jaccard_similarity(prev_subset_idxs, new_global_idxs)
         print(f"New subset is {jaccard_sim*100:.4f}% similar to previous subset")
 
 
-    return train_loader, val_loader, chosen_idxs_pool
-
-    return current_subset
+    return new_train_loader, new_global_idxs

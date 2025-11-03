@@ -59,7 +59,7 @@ def build_transforms(
             (target, target), scale=(0.85, 1.0),
             interpolation=InterpolationMode.BICUBIC, antialias=True
         ),
-        T.RandomHorizontalFlip(0.15),
+        T.RandomHorizontalFlip(0.5),
         T.ColorJitter(0.1, 0.1, 0.1, 0.0),
         T.ToTensor(),
         T.Normalize(mean=mean, std=std),

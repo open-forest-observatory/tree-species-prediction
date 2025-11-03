@@ -10,6 +10,7 @@ import copy
 from configs.path_config import path_config
 from configs.model_config import model_config
 from data.dataset import collate_batch
+from training_utils.visualization import plot_sample_images
 
 def get_classes_from_gpd_file_paths(paths):
     """
@@ -30,7 +31,7 @@ def get_classes_from_gpd_file_paths(paths):
 
     return sorted(species)
 
-def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_samples_per_class=0, seed=-1):
+def stratified_split(dset, val_ratio=0.2, per_class_sample_limit_factor=0, min_samples_per_class=0, seed=-1, sample_idxs_pool=None):
     """
     Returns (train_subset, val_subset) with class-balanced split.
 
@@ -238,7 +239,8 @@ def stratified_split_by_ID(
     return train_idxs, val_idxs
 
 # TODO: implement the class balancing factors here that are in the other stratified split fns
-def stratified_split_by_plot(dset, per_class_sample_limit_factor=None, min_samples_per_class=None, suppress_summary_print=False):
+# TODO: integrate the sample_idxs_pool for data reduction that's in the id split fn into here
+def stratified_split_by_plot(dset, per_class_sample_limit_factor=None, min_samples_per_class=None, sample_idxs_pool=None, suppress_summary_print=False):
     split_df = pd.read_csv(path_config.train_test_split_file)
     target_cols = ['plot_id', 'mission_id_hn', 'mission_id_lo'] # these cols contain the info to construct the indv gpkg file name
 
@@ -383,7 +385,18 @@ def cap_indices_evenly_by_class(
     rng.shuffle(selected)
     return selected
 
-def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, upper_limit_n_samples=0, return_idxs=False, idxs_pool=None):
+def assemble_dataloaders(
+        tree_dset,
+        static_T,
+        train_T,
+        val_T,
+        split_method,
+        upper_limit_n_samples=0,
+        return_subsets=False,
+        idxs_pool=None,
+        plot_sample_imgs=False,
+        val_ratio=None
+    ):
     train_cp = copy.copy(tree_dset)
     val_cp = copy.copy(tree_dset)
 
@@ -397,7 +410,9 @@ def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, uppe
     train_dset_idxs, val_dset_idxs = split_methods[split_method](
         tree_dset,
         per_class_sample_limit_factor=model_config.max_class_imbalance_factor,
-        min_samples_per_class=model_config.min_samples_per_class
+        min_samples_per_class=model_config.min_samples_per_class,
+        sample_idxs_pool=idxs_pool,
+        val_ratio=val_ratio
     ) 
 
     # optionally enforce overall cap with even per-class distribution (applied separately to train/val)
@@ -408,18 +423,23 @@ def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, uppe
         train_dset_idxs = cap_indices_evenly_by_class(
             train_dset_idxs, lbl_lookup, upper_limit_n_samples
         )
+        upper_val_limit = int(upper_limit_n_samples * val_ratio) if val_ratio is not None else upper_limit_n_samples
         val_dset_idxs = cap_indices_evenly_by_class(
-            val_dset_idxs, lbl_lookup, upper_limit_n_samples
+            val_dset_idxs, lbl_lookup, upper_val_limit
         )
 
     # swap default transform of dataset class with the ones just built
     train_cp.static_transform = static_T
     train_cp.random_transform = train_T
     val_cp.static_transform = static_T
-    val_cp.random_transform = val_T
+    val_cp.random_transform = val_T # only normalizes
 
     train_dset = Subset(train_cp, train_dset_idxs)
     val_dset = Subset(val_cp, val_dset_idxs)
+
+    if plot_sample_imgs:
+        plot_sample_images(train_cp, title_prefix='train')
+        plot_sample_images(val_cp, title_prefix='validation')
 
     if model_config.use_class_balancing:
         # get labels of training subset
@@ -464,7 +484,7 @@ def assemble_dataloaders(tree_dset, static_T, train_T, val_T, split_method, uppe
         collate_fn=collate_batch
     )
 
-    if return_idxs:
-        return train_loader, val_loader, train_dset_idxs, val_dset_idxs
+    if return_subsets:
+        return train_loader, val_loader, train_dset, val_dset
     else:
         return train_loader, val_loader

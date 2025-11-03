@@ -71,15 +71,17 @@ def init_training():
         std=tree_model.backbone_data_cfg['std']
     )
 
-    train_loader, val_loader = assemble_dataloaders(
+    train_loader, val_loader, train_subset, val_subset = assemble_dataloaders(
         tree_dset,
         static_T,
         random_train_T,
         random_val_T,
         model_config.data_split_level,
         upper_limit_n_samples=model_config.max_total_samples,
-        return_idxs=False,
-        idxs_pool=None
+        return_subsets=True,
+        idxs_pool=None,
+        plot_sample_imgs=False,
+        val_ratio=model_config.val_ratio
     )
 
     # controls early stopping of training if performance plateaus
@@ -117,5 +119,5 @@ def init_training():
         # use just cosine annealing if no warmup
         scheduler = CosineAnnealingLR(optim, T_max=model_config.epochs)
 
-    return tree_model, tree_dset, train_loader, val_loader, static_T, random_train_T, random_val_T, \
-    optim, criterion, scheduler, scaler, device, early_stopper
+    return tree_model, tree_dset, train_loader, val_loader, train_subset, val_subset, static_T, \
+    random_train_T, random_val_T, optim, criterion, scheduler, scaler, device, early_stopper

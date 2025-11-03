@@ -93,7 +93,7 @@ class PathConfig:
 
     # output of 12_tree_crops.py
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
-    cropped_tree_training_images: Path = intermediate_data_folder / 'cropped_trees'
+    cropped_tree_training_images: Path = intermediate_data_folder / 'cropped_trees_valid_shifts'
 
     # plant clef 2024 pretrained model as a base
     pretrained_model_path: Path = intermediate_data_folder / 'pretrained_models' / 'model_best_vit_base_patch14_reg4_dinov2_lvd142m_pc24_onlyclassifier_then_all.pth.tar'

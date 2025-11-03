@@ -4,7 +4,6 @@ import seaborn as sns
 import torch
 import numpy as np
 
-
 def confusion_matrix(unique_class_labels, dataloader, model, device, exclude_empty=False):
     """Create a confusion matrix of ground truth labels vs predicted labels for all classes."""
     confmat = ConfusionMatrix(task="multiclass", num_classes=len(unique_class_labels)).to(device)
@@ -36,3 +35,18 @@ def confusion_matrix(unique_class_labels, dataloader, model, device, exclude_emp
     ax.set_ylabel("True label")
     ax.set_title("Confusion Matrix")
     return fig
+
+def plot_sample_images(dset, title_prefix=''):
+    shuffled_idxs = list(range(len(dset)))
+    np.random.shuffle(shuffled_idxs)
+    
+    fig, axes = plt.subplots(4,4, figsize=(16,16))
+    for i, ax in enumerate(axes.flatten()):
+        sample = dset[shuffled_idxs[i]]
+        img_reshape = sample[0].permute(1,2,0)
+        label_str = dset.idx2label_map[sample[1]]
+
+        ax.imshow(img_reshape)
+        ax.set_title(f"{title_prefix} - {label_str}")
+    
+    fig.savefig(f"2_training/ckpts/{title_prefix}-sample_imgs.png")

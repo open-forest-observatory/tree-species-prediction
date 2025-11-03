@@ -109,7 +109,7 @@ class TreeDataset(Dataset):
     def __len__(self):
         return len(self.img_paths)
 
-    def __getitem__(self, idx: int, apply_random_transform: bool=True):
+    def __getitem__(self, idx: int):
         meta = self.meta[idx]
 
         # try to access static transformed img on disk cache first
@@ -123,8 +123,9 @@ class TreeDataset(Dataset):
             img = Image.open(meta["path"]).convert("RGB")
             img = self.static_transform(img) # uint8 PIL img to save space
 
-        if apply_random_transform: # should always be true for training, only false to visualize samples
-            img = self.random_transform(img)
+        # training dset -> applies rng based transforms (e.g. randomFlip, colorJitter) then tensorize and normalize
+        # validation dset -> only tensorize and normalize
+        img = self.random_transform(img)
 
         label_idx = int(meta["label_idx"])
 
