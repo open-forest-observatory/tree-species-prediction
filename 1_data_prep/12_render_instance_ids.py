@@ -73,7 +73,7 @@ if __name__ == "__main__":
         )
         # The image folder used to create the Metashape project
         image_folder = Path(path_config.paired_image_sets_for_photogrammetry, dataset)
-        original_image_folder = Path("/data/argo-input/datasets", dataset)
+        original_image_folder = Path(path_config.argo_imagery_path, dataset)
 
         # OUTPUTS
         # Where to save the renders
