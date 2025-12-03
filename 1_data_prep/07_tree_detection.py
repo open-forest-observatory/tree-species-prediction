@@ -54,7 +54,7 @@ def detect_trees(
 
     # Create the detector for variable window maximum detection
     treetop_detector = GeometricTreeTopDetector(
-        a=0, b=0.11, c=0, confidence_feature="distance"
+        a=0, b=0.0325, c=0.25, confidence_feature="distance"
     )
 
     # Generate tree top predictions
