@@ -10,11 +10,11 @@ from utils.config_utils import parse_config_args
 class PathConfig:
     # NOTE: When adding config attrs, ensure type hinting is used as shown below
     # Locations of installed dependencies
-    automate_metashape_path: Path = Path("/ofo-share/repos-david/automate-metashape")
+    automate_metashape_path: Path = Path("/ofo-share/repos/david/automate-metashape")
     metashape_python_path: Path = Path("/home/exouser/miniconda3/envs/meta/bin/python")
 
     # This path can edited if working with a copy of the data
-    data_root_folder: Path = Path("/ofo-share/species-prediction-project/")
+    data_root_folder: Path = Path("/ofo-share/project-data/species-prediction-project")
 
     # Inputs
     # TODO this could be updated to be within the DATA_ROOT_FOLDER tree
