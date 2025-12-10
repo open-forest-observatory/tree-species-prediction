@@ -211,7 +211,8 @@ def match_ground_plots_with_drone_missions(
 
     # Keep all plots from project NEON2023. Others must satisfy year difference check.
     valid_pairs = joined[
-        (joined["project_name"] == "NEON2023") | (joined["ground_and_drone_year_diff"] <= 8)
+        (joined["project_name"] == "NEON2023")
+        | (joined["ground_and_drone_year_diff"] <= 8)
     ]
 
     # Rename _1 to _hn and _2 to _lo
@@ -225,11 +226,18 @@ def match_ground_plots_with_drone_missions(
 
     # Calculate date difference between HN and LO missions
     valid_pairs["hn_lo_date_diff"] = (
-        valid_pairs["earliest_date_derived_hn"] - valid_pairs["earliest_date_derived_lo"]
-    ).abs().dt.days
+        (
+            valid_pairs["earliest_date_derived_hn"]
+            - valid_pairs["earliest_date_derived_lo"]
+        )
+        .abs()
+        .dt.days
+    )
 
     # Sort so smallest ground_and_drone_year_diff comes first, then smallest hn_lo_date_diff
-    valid_pairs = valid_pairs.sort_values(["ground_and_drone_year_diff", "hn_lo_date_diff"])
+    valid_pairs = valid_pairs.sort_values(
+        ["ground_and_drone_year_diff", "hn_lo_date_diff"]
+    )
 
     # Ensure each LO mission is matched only once per ground plot
     # For each (mission_id_lo, plot_id), keep only the row with the smallest date difference
