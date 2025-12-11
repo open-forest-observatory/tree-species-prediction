@@ -234,9 +234,14 @@ def match_ground_plots_with_drone_missions(
         .dt.days
     )
 
-    # Sort so smallest ground_and_drone_year_diff comes first, then smallest hn_lo_date_diff
+    # Convert mission IDs to integers for numerical sorting (needed to pick mission with highest ID when breaking ties)
+    valid_pairs["mission_id_hn_int"] = valid_pairs["mission_id_hn"].astype(int)
+
+    # Sort so smallest ground_and_drone_year_diff comes first, within that sort by smallest hn_lo_date_diff,
+    # then order by highest mission_id_hn (for consistent tie-breaking)
     valid_pairs = valid_pairs.sort_values(
-        ["ground_and_drone_year_diff", "hn_lo_date_diff"]
+        ["ground_and_drone_year_diff", "hn_lo_date_diff", "mission_id_hn_int"],
+        ascending=[True, True, False]  # descending for mission_id_hn_int
     )
 
     # Ensure each LO mission is matched only once per ground plot
@@ -244,6 +249,9 @@ def match_ground_plots_with_drone_missions(
     valid_pairs = valid_pairs.drop_duplicates(
         subset=["mission_id_lo", "plot_id"], keep="first"
     )
+
+    # Drop the helper column
+    valid_pairs = valid_pairs.drop(columns=["mission_id_hn_int"])
 
     ground_plot_drone_missions_matches = valid_pairs[
         [
