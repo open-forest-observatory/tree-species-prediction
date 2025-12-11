@@ -18,9 +18,7 @@ class PathConfig:
 
     # Inputs
     # TODO this could be updated to be within the DATA_ROOT_FOLDER tree
-    imagery_datasets_folder: Path = Path(
-        "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
-    )
+    imagery_datasets_folder: Path = Path("/ofo-share/scratch/david/input_imagery")
 
     # TODO consider renaming this to "inputs" if we want to be consistent with the NRS project
     raw_folder: Path = Path(data_root_folder, "raw")

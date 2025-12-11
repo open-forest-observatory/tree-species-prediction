@@ -1,17 +1,11 @@
-import itertools
 import json
-import typing
 from pathlib import Path
 
 import geopandas as gpd
-import matplotlib.pyplot as plt
+from tree_registration_and_matching.register_MEE import align_plot
 import numpy as np
-import pandas as pd
 import shapely
-from scipy.spatial import KDTree
-from shapely.affinity import translate
-from spatial_utils.geospatial import ensure_projected_CRS
-from tqdm import tqdm
+import pandas as pd
 
 import _bootstrap
 from configs.path_config import path_config
@@ -60,7 +54,7 @@ def is_overstory(tree_dataset: gpd.GeoDataFrame):
         return np.array([], dtype=bool)
 
     # Ensure that we have a meters-based projected CRS
-    tree_dataset = ensure_projected_CRS(tree_dataset)
+    tree_dataset = tree_dataset.to_crs(3310)
 
     # Compute the difference in heights between different trees. This is the j axis minus the one on
     # the i axis
@@ -90,141 +84,6 @@ def is_overstory(tree_dataset: gpd.GeoDataFrame):
     return is_overstory
 
 
-def find_best_shift(
-    field_trees: gpd.GeoDataFrame,
-    drone_trees: gpd.GeoDataFrame,
-    search_window: float = 50,
-    search_increment: float = 2,
-    base_shift: typing.Tuple[float] = (0, 0),
-    vis: bool = False,
-) -> np.array:
-    """
-    Compute the shift for the observed trees that minimizes the mean distance between observed trees
-    and the nearest drone tree.
-
-
-    Args:
-        field_trees (gpd.GeoDataFrame):
-            Dataframe of field trees
-        drone_trees (gpd.GeoDataFrame):
-            Dataframe of drone trees
-        search_window (float, optional):
-            Distance in meters to perform grid search. Defaults to 50.
-        search_increment (float, optional):
-            Increment in meters for grid search. Defaults to 2.
-        base_shift_x (float, optional):
-            Center the grid search around shifting the x of observations this much. Defaults to 0.
-        base_shift_y (float, optional):
-            Center the grid search around shifting the y of observations this much. Defaults to 0.
-        vis (bool, optional):
-            Visualize a scatter plot of the mean closest distance to drone trees for each shift.
-            Defaults to False.
-
-    Returns:
-        np.array:
-            The [x, y] shift that should be applied to the field trees to align them with the
-            drone trees
-    """
-    # Extract the numpy (n, 2) coordinates of the points
-    # TODO this could include a .centroid call if we want to be more flexible with different input
-    # types
-    field_tree_points_np = shapely.get_coordinates(field_trees.geometry)
-    drone_tree_points_np = shapely.get_coordinates(drone_trees.geometry)
-
-    # Build a KDTree to accelerate nearest neighbor queries
-    drone_kd_tree = KDTree(drone_tree_points_np)
-
-    # Build the shifts. Note that our eventual goal is to recover a shift for the observed trees,
-    # assuming the drone trees remain fixed
-    x_shifts = np.arange(
-        start=base_shift[0] - search_window,
-        stop=base_shift[0] + search_window,
-        step=search_increment,
-    )
-    y_shifts = np.arange(
-        start=base_shift[1] - search_window,
-        stop=base_shift[1] + search_window,
-        step=search_increment,
-    )
-    shifts = [
-        np.expand_dims(np.array(shift), axis=0)
-        for shift in (itertools.product(x_shifts, y_shifts))
-    ]
-
-    # Iterate over the shifts and compute the mean distance to the nearest drone tree for each field
-    # tree
-    mean_dists = []
-    for shift in tqdm(shifts):
-        # Shift the points
-        shifted_field_tree_points_np = field_tree_points_np + shift
-
-        # The KD tree directly returns the distance from the query to the nearest point
-        dist_to_closest_point, _ = drone_kd_tree.query(shifted_field_tree_points_np)
-        # Record for later
-        mean_dists.append(np.mean(dist_to_closest_point))
-
-    if vis:
-        # Extract the x and y components of the shifts
-        x = [shift[0, 0] for shift in shifts]
-        y = [shift[0, 1] for shift in shifts]
-
-        # Create a scatter plot of the shifts versus the quailty of the alignment
-        plt.scatter(x, y, c=mean_dists)
-        plt.colorbar()
-        plt.show()
-
-    # Find the shift that produced the lowest mean distance for each field tree
-    best_shift = shifts[np.argmin(mean_dists)][0]
-    return best_shift
-
-
-def align_plot(field_trees, drone_trees, height_column="height", vis=False):
-    original_field_CRS = field_trees.crs
-    # Transform the drone trees to a cartesian CRS if not already
-    field_trees = ensure_projected_CRS(field_trees)
-
-    # Ensure that drone trees are in the same CRS
-    drone_trees.to_crs(field_trees.crs, inplace=True)
-
-    # First compute a rough shift and then a fine one
-    coarse_shift = find_best_shift(
-        field_trees=field_trees,
-        drone_trees=drone_trees,
-        search_increment=1,
-        search_window=10,
-        vis=False,
-    )
-    # This is initialized from the coarse shift
-    fine_shift = find_best_shift(
-        field_trees=field_trees,
-        drone_trees=drone_trees,
-        search_window=2,
-        search_increment=0.2,
-        base_shift=coarse_shift,
-    )
-
-    print(f"Rough shift: {coarse_shift}, fine shift: {fine_shift}")
-
-    shifted_field_trees = field_trees.copy()
-    # Apply the computed shift to the geometry of all field trees
-    shifted_field_trees.geometry = shifted_field_trees.geometry.apply(
-        lambda x: translate(x, xoff=fine_shift[0], yoff=fine_shift[1])
-    )
-
-    # Convert back to the original CRS
-    shifted_field_trees.to_crs(original_field_CRS, inplace=True)
-
-    if vis:
-        # Plot the aligned data
-        f, ax = plt.subplots()
-        shifted_field_trees.plot(ax=ax)
-        field_trees.plot(ax=ax)
-        plt.colorbar()
-        plt.show()
-
-    return shifted_field_trees, fine_shift
-
-
 if __name__ == "__main__":
     # Read the pairings between drone and field plots
     plot_pairings = pd.read_csv(path_config.overlapping_plots_file)
@@ -232,6 +91,8 @@ if __name__ == "__main__":
     detected_tree_folders = sorted(path_config.tree_detections_folder.glob("*"))
     # Read the ground reference trees
     ground_reference_trees = gpd.read_file(path_config.ground_reference_trees_file)
+    # Read the plot bounds
+    all_plot_bounds = gpd.read_file(path_config.ground_reference_plots_file)
 
     # Filter out any dead trees
     # TODO consider only keeping "L" ones rather than discarding "D", since there are over 1000 rows
@@ -294,6 +155,7 @@ if __name__ == "__main__":
         plot_ID = f"{int(matching_row['plot_id'].values[0]):04}"
 
         field_trees = ground_reference_trees.query("@plot_ID == plot_id")
+        obs_bounds = all_plot_bounds.query("@plot_ID == plot_id")
 
         # Compute which trees are overstory
         overstory = is_overstory(field_trees)
@@ -306,8 +168,8 @@ if __name__ == "__main__":
             continue
 
         # Compute the shift between the field and drone trees
-        shifted_field_trees, final_shift = align_plot(
-            field_trees=field_trees, drone_trees=drone_trees
+        shifted_field_trees, final_shift, _ = align_plot(
+            field_trees=field_trees, drone_trees=drone_trees, obs_bounds=obs_bounds
         )
 
         # Write out the shifted field trees
