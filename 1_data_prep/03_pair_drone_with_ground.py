@@ -241,7 +241,7 @@ def match_ground_plots_with_drone_missions(
     # then order by highest mission_id_hn (for consistent tie-breaking)
     valid_pairs = valid_pairs.sort_values(
         ["ground_and_drone_year_diff", "hn_lo_date_diff", "mission_id_hn_int"],
-        ascending=[True, True, False]  # descending for mission_id_hn_int
+        ascending=[True, True, False],  # descending for mission_id_hn_int
     )
 
     # Ensure each LO mission is matched only once per ground plot
