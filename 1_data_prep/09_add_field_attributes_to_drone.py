@@ -1,4 +1,4 @@
-import sys
+import json
 from pathlib import Path
 
 import geopandas as gpd
@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shapely
-from spatial_utils.geospatial import ensure_projected_CRS
+#from spatial_utils.geospatial import ensure_projected_CRS
 
 import _bootstrap
 from configs.path_config import path_config
@@ -138,23 +138,12 @@ def match_trees_singlestratum(
 
 
 def match_field_and_drone_trees(
-    field_trees_path: Path,
-    drone_trees_path: Path,
-    drone_crowns_path: Path,
+    field_trees: gpd.GeoDataFrame,
+    drone_trees: gpd.GeoDataFrame,
+    drone_crowns: gpd.GeoDataFrame,
     field_perim: gpd.GeoDataFrame,
     field_buffer_dist: float = 10.0,
 ):
-    # Load all the data
-    field_trees = gpd.read_file(field_trees_path)
-    drone_trees = gpd.read_file(drone_trees_path)
-    drone_crown = gpd.read_file(drone_crowns_path)
-
-    # Ensure it's all in the same projected CRS
-    field_trees = ensure_projected_CRS(field_trees)
-    drone_trees = drone_trees.to_crs(field_trees.crs)
-    drone_crown = drone_crown.to_crs(field_trees.crs)
-    field_perim = field_perim.to_crs(field_trees.crs)
-
     # Get the buffered perimiter
     perim_buff = field_perim.buffer(field_buffer_dist).geometry.values[0]
 
@@ -184,7 +173,7 @@ def match_field_and_drone_trees(
 
     # Transfer the attributes to the drone trees.
     drone_crowns_with_additional_attributes = pd.merge(
-        left=drone_crown,
+        left=drone_crowns,
         right=matched_field_trees,
         left_on="treetop_unique_ID",
         right_on=drone_tree_unique_IDs,
@@ -197,59 +186,99 @@ def match_field_and_drone_trees(
 
     return drone_crowns_with_additional_attributes
 
+def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    # Filter out any dead trees
+    # note that we are intentionally keeping any trees with a nan status, since these are known to
+    # be live trees
+    ground_reference_trees = ground_reference_trees[
+        ground_reference_trees.live_dead != "D"
+    ]
+
+    # First replace any missing height values with pre-computed allometric values
+    nan_height = ground_reference_trees.height.isna()
+    ground_reference_trees[nan_height].height = ground_reference_trees[
+        nan_height
+    ].height_allometric
+
+    # For any remaining missing height values that have DBH, use an allometric equation to compute
+    # the height
+    nan_height = ground_reference_trees.height.isna()
+    # These parameters were fit on paired height, DBH data from this dataset.
+    allometric_height_func = lambda x: 1.3 + np.exp(
+        -0.3136489123372108 + 0.84623571 * np.log(x)
+    )
+    # Compute the allometric height and assign it
+    allometric_height = allometric_height_func(
+        ground_reference_trees[nan_height].dbh.to_numpy()
+    )
+    ground_reference_trees.loc[nan_height, "height"] = allometric_height
+
+    # Filter out any trees that still don't have height (just 1 in current experiments)
+    ground_reference_trees = ground_reference_trees[
+        ~ground_reference_trees.height.isna()
+    ]
+
+    return ground_reference_trees
+
 
 if __name__ == "__main__":
-    # List files
-    shifted_field_trees = list(path_config.shifted_field_trees_folder.glob("*"))
-    detected_trees = list(path_config.tree_detections_folder.glob("*"))
-
-    # Compute the dataset ID without the extension
-    field_datasets = set([f.stem for f in shifted_field_trees])
-    detected_tree_datasets = set([f.name for f in detected_trees])
-
-    # Find which datasets are present in both sets
-    overlapping_datasets = field_datasets.intersection(detected_tree_datasets)
-
-    # Print how many unpaired datasets there are
-    field_missing_pairs = len(field_datasets) - len(overlapping_datasets)
-    detected_missing_pairs = len(detected_tree_datasets) - len(overlapping_datasets)
-
-    if field_missing_pairs:
-        print(
-            f"Warning: {field_missing_pairs} field datasets do not have corresponding detected trees"
-        )
-
-    if detected_missing_pairs:
-        print(
-            f"Warning: {detected_missing_pairs} detected datasets do not have corresponding field trees"
-        )
-
     # Load the spatial bounds of the field survey, for all plots
-    field_reference_plot_bounds = gpd.read_file(path_config.ground_reference_plots_file)
+    ground_reference_plot_bounds = gpd.read_file(path_config.ground_reference_plots_file).to_crs(3310)
+    # Load the field reference trees, for all plots
+    ground_reference_trees = gpd.read_file(path_config.ground_reference_trees_file).to_crs(3310)
 
-    # Create the output directory
-    path_config.drone_crowns_with_field_attributes.mkdir(exist_ok=True, parents=True)
-    for dataset in overlapping_datasets:
+    # Load the shifts per dataset dict
+    shift_per_dataset = json.load(open(path_config.shift_per_dataset_file, "r"))
+    # Load the quality of the field reference trees
+    shift_qualities = pd.read_csv(path_config.shift_quality_file)
+    # TODO potentially load hardwood fraction
+
+    # Ensure that the height column is filled out and dead trees are removed
+    ground_reference_trees = cleanup_field_trees(ground_reference_trees)
+
+    # Extract the dataset names that have high quality shifts
+    high_quality_shift_datasets = shift_qualities.loc[shift_qualities.Quality.isin([3,4]), "Dataset"].tolist()
+    # Drop the .tif extension from the dataset names
+    high_quality_shift_datasets = [x.split(".")[0] for x in high_quality_shift_datasets]
+
+    # Make the output folder
+    Path(path_config.drone_crowns_with_field_attributes).mkdir(exist_ok=True)
+
+    for high_quality_dataset in high_quality_shift_datasets:
         # Extract which field plot this dataset corresponds to
-        plot_id = dataset.split("_")[0]
+        plot_id = high_quality_dataset.split("_")[0]
         # Identify the perimiter as a single row from the dataframe
-        field_perim = field_reference_plot_bounds.query("plot_id == @plot_id")
+        ground_plot_perim = ground_reference_plot_bounds.query("plot_id == @plot_id")
+        # Identify the trees for this field plot
+        ground_trees = ground_reference_trees.query("plot_id == @plot_id")
+        # Extract the shift for this dataset
+        shift = shift_per_dataset[high_quality_dataset][0]
 
-        # Create the crowns with additional attributes from the field surveyed trees
-        updated_drone_crowns = match_field_and_drone_trees(
-            field_trees_path=Path(
-                path_config.shifted_field_trees_folder, dataset + ".gpkg"
-            ),
-            drone_trees_path=Path(
-                path_config.tree_detections_folder, dataset, "tree_tops.gpkg"
-            ),
-            drone_crowns_path=Path(
-                path_config.tree_detections_folder, dataset, "tree_crowns.gpkg"
-            ),
-            field_perim=field_perim,
+        # Apply the shift to the field trees and plot bounds
+        ground_trees.geometry = ground_trees.geometry.translate(xoff=shift[0], yoff=shift[1])
+        ground_plot_perim.geometry = ground_plot_perim.geometry.translate(xoff=shift[0], yoff=shift[1])
+
+        # Load the detected trees
+        drone_trees = gpd.read_file(
+            Path(path_config.tree_detections_folder, high_quality_dataset, "tree_tops.gpkg")
+        ).to_crs(3310)
+        # Load the detected crowns
+        drone_crowns = gpd.read_file(
+            Path(path_config.tree_detections_folder, high_quality_dataset, "tree_crowns.gpkg")
+        ).to_crs(3310)
+
+        updated_drone_crowns =  match_field_and_drone_trees(
+            field_trees=ground_trees,
+            drone_trees=drone_trees,
+            drone_crowns=drone_crowns,
+            field_perim=ground_plot_perim,
         )
 
-        # Save the updated crowns, knowing the output directory has already been created
+        # Drop any crowns that were not matched
+        updated_drone_crowns = updated_drone_crowns.dropna(subset=["species_code"])
+        # Drop any crowns that were less than 10m tall
+        updated_drone_crowns = updated_drone_crowns[updated_drone_crowns.height_field > 10]
+
         updated_drone_crowns.to_file(
-            Path(path_config.drone_crowns_with_field_attributes, dataset + ".gpkg")
+            Path(path_config.drone_crowns_with_field_attributes, high_quality_dataset + ".gpkg")
         )
