@@ -46,7 +46,7 @@ class PathConfig:
     preprocessing_folder: Path = Path(intermediate_data_folder, "preprocessing")
 
     paired_image_sets_for_photogrammetry: Path = Path(
-        "/ofo-share-2/argo-data/argo-input/datasets"
+        "/ofo-share/argo-data/argo-input/datasets"
     )
 
     # This will be the path within the container
