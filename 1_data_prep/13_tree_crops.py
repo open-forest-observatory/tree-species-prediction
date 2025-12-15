@@ -365,14 +365,6 @@ for dset_name in dset_names:
             if y1 - y0 < IMAGE_RES_CONSTRAINT or x1 - x0 < IMAGE_RES_CONSTRAINT:
                 continue
 
-            # check if image within safe radius to limit distortion effects
-            crop_cx, crop_cy = (x0 + x1) / 2, (y0 + y1) / 2
-            diff = np.array([img_cx - crop_cx, img_cy - crop_cy])
-            if (
-                diff @ diff > safe_radius**2
-            ):  # similar to euclidean norm but without sqrt -> faster
-                continue
-
             # cropped near edge
             # near edge may not capture whole tree
             # radial detection above should capture most of these but this exists as a failsafe
