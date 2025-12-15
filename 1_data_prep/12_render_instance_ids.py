@@ -15,7 +15,8 @@ from configs.path_config import path_config
 
 # The image is downsampled to this fraction for accelerated rendering
 # Temporarily fixed to 1 since distortion modeling doesn't yet work on scaled images
-RENDER_IMAGE_SCALE = 1
+# TODO see if this is supported by the distortion modeling
+RENDER_IMAGE_SCALE = 0.25
 # Portions of the mesh within this distance of the labels are used for rendering
 MESH_BUFFER_RADIUS_METER = 50
 # Cameras within this radius of the annotations are used for training
@@ -32,6 +33,9 @@ INPUT_CRS = "EPSG:26910"
 # "unique_ID" column is the ID assigned to each tree-crown by the GeometricTreeCrownDetector
 LABEL_COLUMN_NAME = "unique_ID"
 VIS = True
+
+# Error logging file
+ERROR_LOG_FILE = Path("error_log.txt")
 
 if __name__ == "__main__":
     if not path_config.photogrammetry_folder.is_symlink():
@@ -119,8 +123,10 @@ if __name__ == "__main__":
                     num_show=10,
                     label_suffix=".tif",
                 )
-        except FileNotFoundError as e:
+        except Exception as e:
             print(
-                f"skipping dataset {dataset} because of missing files. The error was the following:"
+                f"skipping dataset {dataset} because of error. The error was the following:"
             )
             print(e)
+            with open(ERROR_LOG_FILE, "a") as f:
+                f.write(f"Dataset {dataset} failed with error: {e}\n")
