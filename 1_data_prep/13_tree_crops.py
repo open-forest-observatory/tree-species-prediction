@@ -165,15 +165,7 @@ all_species_mappings = load_all_species_mappings(species_crosswalk_path)
 
 
 # Specify datasets to process (set to None to process all datasets)
-DATASETS_TO_PROCESS = [
-    "0073_000874_000932",
-    "0074_000874_000932",
-    "0076_000874_000932",
-    "0077_000810_000808",
-    "0078_000810_000808",
-    "0079_000810_000808",
-    "0080_000810_000808",
-]
+DATASETS_TO_PROCESS = None
 
 if DATASETS_TO_PROCESS is None:
     dset_names = sorted(os.listdir(tree_label_mask_paths))
@@ -363,25 +355,6 @@ for dset_name in dset_names:
             # low res img
             # typically trees too far off in the distance
             if y1 - y0 < IMAGE_RES_CONSTRAINT or x1 - x0 < IMAGE_RES_CONSTRAINT:
-                continue
-
-            # check if image within safe radius to limit distortion effects
-            crop_cx, crop_cy = (x0 + x1) / 2, (y0 + y1) / 2
-            diff = np.array([img_cx - crop_cx, img_cy - crop_cy])
-            if (
-                diff @ diff > safe_radius**2
-            ):  # similar to euclidean norm but without sqrt -> faster
-                continue
-
-            # cropped near edge
-            # near edge may not capture whole tree
-            # radial detection above should capture most of these but this exists as a failsafe
-            if (
-                img.height - y1 < IMAGE_RES_CONSTRAINT
-                or img.width - x1 < IMAGE_RES_CONSTRAINT
-                or y0 < IMAGE_RES_CONSTRAINT
-                or x0 < IMAGE_RES_CONSTRAINT
-            ):
                 continue
 
             # Apply background masking if enabled
