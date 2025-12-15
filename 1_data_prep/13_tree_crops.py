@@ -357,17 +357,6 @@ for dset_name in dset_names:
             if y1 - y0 < IMAGE_RES_CONSTRAINT or x1 - x0 < IMAGE_RES_CONSTRAINT:
                 continue
 
-            # cropped near edge
-            # near edge may not capture whole tree
-            # radial detection above should capture most of these but this exists as a failsafe
-            if (
-                img.height - y1 < IMAGE_RES_CONSTRAINT
-                or img.width - x1 < IMAGE_RES_CONSTRAINT
-                or y0 < IMAGE_RES_CONSTRAINT
-                or x0 < IMAGE_RES_CONSTRAINT
-            ):
-                continue
-
             # Apply background masking if enabled
             if MASK_BACKGROUND:
                 masked_img_array = create_masked_image(
