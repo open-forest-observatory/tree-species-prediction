@@ -85,7 +85,7 @@ if __name__ == "__main__":
         # Where to save the visualizations
         vis_output_folder = path_config.rendered_instance_ids_vis / dataset
 
-        if render_output_folder.exists() and any(render_output_folder.iterdir()):
+        if render_output_folder.exists():
             print(
                 f"Skipping {dataset} - renders already exist at {render_output_folder}"
             )
@@ -95,7 +95,17 @@ if __name__ == "__main__":
             print(f"Skipping {dataset} - vector file not found at {labels_file}")
             continue
 
+        # Create the IDs to labels mapping
+        labels = gpd.read_file(labels_file)
+        label_values = labels[LABEL_COLUMN_NAME].tolist()
+        # Notably, the label IDs must start at 1 because 0 is reserved for the background
+        ids_to_labels = {i + 1: label for i, label in enumerate(label_values)}
+
         try:
+            # Create an output directory with a single folder inside it to mark the render as in
+            # progress. This is useful if using multiple workers to parallelize the rendering.
+            render_output_folder.mkdir(parents=True, exist_ok=True)
+
             render_labels(
                 mesh_file=mesh_file,
                 cameras_file=cameras_file,
@@ -113,6 +123,7 @@ if __name__ == "__main__":
                 render_image_scale=RENDER_IMAGE_SCALE,
                 mesh_downsample=DOWNSAMPLE_TARGET,
                 cast_to_uint8=False,  # Save the rendered IDs as TIF files to support ID values > 255
+                IDs_to_labels=ids_to_labels,
             )
 
             if VIS:
