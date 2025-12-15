@@ -165,11 +165,7 @@ all_species_mappings = load_all_species_mappings(species_crosswalk_path)
 
 
 # Specify datasets to process (set to None to process all datasets)
-df = pd.read_csv(
-    "/ofo-share/scratch/amritha/tree-species-scratch/november-run/valid-datasets-nov-run.csv"
-)
-full_list = df.loc[df["valid"] == "Good", "dataset"].str[:-5].tolist()
-DATASETS_TO_PROCESS = full_list
+DATASETS_TO_PROCESS = None
 
 if DATASETS_TO_PROCESS is None:
     dset_names = sorted(os.listdir(tree_label_mask_paths))
@@ -177,9 +173,6 @@ if DATASETS_TO_PROCESS is None:
 else:
     all_dset_names = sorted(os.listdir(tree_label_mask_paths))
     dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
-    not_found = set(DATASETS_TO_PROCESS) - set(dset_names)
-    if not_found:
-        print(f"Warning: The following datasets were not found: {not_found}")
     print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
 
 dset_gt_mapping = {
