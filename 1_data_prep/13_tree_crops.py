@@ -165,8 +165,10 @@ all_species_mappings = load_all_species_mappings(species_crosswalk_path)
 
 
 # Specify datasets to process (set to None to process all datasets)
-df = pd.read_csv("/ofo-share/scratch/amritha/tree-species-scratch/november-run/valid-datasets-nov-run.csv")
-full_list = df.loc[df['valid'] == 'Good', 'dataset'].str[:-5].tolist()
+df = pd.read_csv(
+    "/ofo-share/scratch/amritha/tree-species-scratch/november-run/valid-datasets-nov-run.csv"
+)
+full_list = df.loc[df["valid"] == "Good", "dataset"].str[:-5].tolist()
 DATASETS_TO_PROCESS = full_list
 
 if DATASETS_TO_PROCESS is None:
