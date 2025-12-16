@@ -6,10 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shapely
-#from spatial_utils.geospatial import ensure_projected_CRS
 
 import _bootstrap
 from configs.path_config import path_config
+
+#from spatial_utils.geospatial import ensure_projected_CRS
+
 
 
 # Taken from here:
