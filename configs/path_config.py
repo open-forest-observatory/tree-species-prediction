@@ -79,7 +79,9 @@ class PathConfig:
         intermediate_data_folder, "hdbscan_clustered_plots.gpkg"
     )
     train_val_split_file = Path(intermediate_data_folder, "train_val_split.csv")
-    train_val_split_gpkg_file = Path(intermediate_data_folder, "train_val_split_vis.gpkg")
+    train_val_split_gpkg_file = Path(
+        intermediate_data_folder, "train_val_split_vis.gpkg"
+    )
 
     drone_images_root: Path = Path(
         "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
