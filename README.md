@@ -10,7 +10,7 @@ This project is a wrapper around Agisoft Metashape that allows for reproducible 
 # Setup
 Before any scripts can be ran, you must symlink the `_bootstrap.py` script into all working directories (i.e. folders with scripts that are ran directly, not called like other scripts such as those in `utils/` or `config/`). Fortunately the script `symlink_bootstrap.py` exists for that purpose. Simply run that script from the root directory of the project and it will take care of the rest. **This only needs to be ran once, unless symlinks break, or if new working directories are added.**
 
-**Note for Contributors:** There is a list in this script called `WORKING_DIRS` that contains the relative paths of folders described above. If you add a new folder for scripts to be ran directly, please ensure you also add the relative path of the folder to this list. Similarly if additional outside scripts are needed (e.g. Automate-Metashape) the paths to these script dirs can be added to `_bootstrap.py` in a list towards the bottom called `SCRIPTS_PATHS`. 
+**Note for Contributors:** There is a list in this script called `WORKING_DIRS` that contains the relative paths of folders described above. If you add a new folder for scripts to be ran directly, please ensure you also add the relative path of the folder to this list. Similarly if additional outside scripts are needed (e.g. Automate-Metashape) the paths to these script dirs can be added to `_bootstrap.py` in a list towards the bottom called `SCRIPTS_PATHS`.
 
 # Processing steps
 TODO, describe overview of processing steps
@@ -23,12 +23,13 @@ The goal of photogrammetry is to reconstruct the 3D geometry of the scene from i
 - `1_compute_CHM.py`: This computes a canopy height model from the digital terrain model (DTM) and digital surface model (DSM) produced by photogrammetry. It requires that [rioxarray](https://corteva.github.io/rioxarray/stable/installation.html) be installed.
 - `2_tree_detection.py`: This detects trees in the CHM representation. The [Tree Detection Framework](https://github.com/open-forest-observatory/tree-detection-framework) must be installed.
 - `3_match_field_drone.py`: Install [spatial-utils](https://github.com/open-forest-observatory/spatial-utils) with the exception of the `poetry install` step. Then run `conda install scikit-learn`. Finally, from within the `spatial-utils` repository, run `poetry install`.
+- `add_field_attributes_to_drone.py`: This can be run with the tree-detection-framework dependencies. It performs matching between the field trees and drone-detected trees.
 
 ## Training
 ### Work in Progress
 1. Download the pretrained PlantCLEF models to the appropriate directory (run these from the project root directory)
 ```
-wget -P 2_training/models/pretrained https://zenodo.org/records/10848263/files/PlantNet_PlantCLEF2024_pretrained_models_on_the_flora_of_south-western_europe.tar?download=1 
+wget -P 2_training/models/pretrained https://zenodo.org/records/10848263/files/PlantNet_PlantCLEF2024_pretrained_models_on_the_flora_of_south-western_europe.tar?download=1
 
 # frozen backbone (just classification head for training)
 tar -xvf 2_training/models/pretrained/PlantNet_PlantCLEF2024_pretrained_models_on_the_flora_of_south-western_europe.tar?download=1 pretrained_models/vit_base_patch14_reg4_dinov2_lvd142m_pc24_onlyclassifier/model_best.pth.tar --strip-components=2 -O > 2_training/models/pretrained/model_best_vit_base_patch14_reg4_dinov2_lvd142m_pc24_onlyclassifier.pth.tar
