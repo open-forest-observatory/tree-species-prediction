@@ -375,8 +375,8 @@ if __name__ == "__main__":
         print(f"\nWARNING: {missing_splits} dataset(s) has no split assignment (plots with no primary species at {LUMP_LEVEL})")
         print(pairs_df[pairs_df['split'].isna()])
     
-    pairs_df.to_csv(path_config.train_test_split_file, index=False)
-    plots_gdf.to_file(path_config.train_test_split_gpkg_file)
+    pairs_df.to_csv(path_config.train_val_split_file, index=False)
+    plots_gdf.to_file(path_config.train_val_split_gpkg_file)
 
     # Verify all datasets for same plot have same split assigned
     print("\nVerifying split consistency...")
