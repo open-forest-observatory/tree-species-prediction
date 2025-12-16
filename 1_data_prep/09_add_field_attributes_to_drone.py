@@ -10,8 +10,7 @@ import shapely
 import _bootstrap
 from configs.path_config import path_config
 
-#from spatial_utils.geospatial import ensure_projected_CRS
-
+# from spatial_utils.geospatial import ensure_projected_CRS
 
 
 # Taken from here:
@@ -188,6 +187,7 @@ def match_field_and_drone_trees(
 
     return drone_crowns_with_additional_attributes
 
+
 def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # Filter out any dead trees
     # note that we are intentionally keeping any trees with a nan status, since these are known to
@@ -225,9 +225,13 @@ def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoData
 
 if __name__ == "__main__":
     # Load the spatial bounds of the field survey, for all plots
-    ground_reference_plot_bounds = gpd.read_file(path_config.ground_reference_plots_file).to_crs(3310)
+    ground_reference_plot_bounds = gpd.read_file(
+        path_config.ground_reference_plots_file
+    ).to_crs(3310)
     # Load the field reference trees, for all plots
-    ground_reference_trees = gpd.read_file(path_config.ground_reference_trees_file).to_crs(3310)
+    ground_reference_trees = gpd.read_file(
+        path_config.ground_reference_trees_file
+    ).to_crs(3310)
 
     # Load the shifts per dataset dict
     shift_per_dataset = json.load(open(path_config.shift_per_dataset_file, "r"))
@@ -239,7 +243,9 @@ if __name__ == "__main__":
     ground_reference_trees = cleanup_field_trees(ground_reference_trees)
 
     # Extract the dataset names that have high quality shifts
-    high_quality_shift_datasets = shift_qualities.loc[shift_qualities.Quality.isin([3,4]), "Dataset"].tolist()
+    high_quality_shift_datasets = shift_qualities.loc[
+        shift_qualities.Quality.isin([3, 4]), "Dataset"
+    ].tolist()
     # Drop the .tif extension from the dataset names
     high_quality_shift_datasets = [x.split(".")[0] for x in high_quality_shift_datasets]
 
@@ -257,19 +263,31 @@ if __name__ == "__main__":
         shift = shift_per_dataset[high_quality_dataset][0]
 
         # Apply the shift to the field trees and plot bounds
-        ground_trees.geometry = ground_trees.geometry.translate(xoff=shift[0], yoff=shift[1])
-        ground_plot_perim.geometry = ground_plot_perim.geometry.translate(xoff=shift[0], yoff=shift[1])
+        ground_trees.geometry = ground_trees.geometry.translate(
+            xoff=shift[0], yoff=shift[1]
+        )
+        ground_plot_perim.geometry = ground_plot_perim.geometry.translate(
+            xoff=shift[0], yoff=shift[1]
+        )
 
         # Load the detected trees
         drone_trees = gpd.read_file(
-            Path(path_config.tree_detections_folder, high_quality_dataset, "tree_tops.gpkg")
+            Path(
+                path_config.tree_detections_folder,
+                high_quality_dataset,
+                "tree_tops.gpkg",
+            )
         ).to_crs(3310)
         # Load the detected crowns
         drone_crowns = gpd.read_file(
-            Path(path_config.tree_detections_folder, high_quality_dataset, "tree_crowns.gpkg")
+            Path(
+                path_config.tree_detections_folder,
+                high_quality_dataset,
+                "tree_crowns.gpkg",
+            )
         ).to_crs(3310)
 
-        updated_drone_crowns =  match_field_and_drone_trees(
+        updated_drone_crowns = match_field_and_drone_trees(
             field_trees=ground_trees,
             drone_trees=drone_trees,
             drone_crowns=drone_crowns,
@@ -279,8 +297,13 @@ if __name__ == "__main__":
         # Drop any crowns that were not matched
         updated_drone_crowns = updated_drone_crowns.dropna(subset=["species_code"])
         # Drop any crowns that were less than 10m tall
-        updated_drone_crowns = updated_drone_crowns[updated_drone_crowns.height_field > 10]
+        updated_drone_crowns = updated_drone_crowns[
+            updated_drone_crowns.height_field > 10
+        ]
 
         updated_drone_crowns.to_file(
-            Path(path_config.drone_crowns_with_field_attributes, high_quality_dataset + ".gpkg")
+            Path(
+                path_config.drone_crowns_with_field_attributes,
+                high_quality_dataset + ".gpkg",
+            )
         )
