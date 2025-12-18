@@ -187,6 +187,7 @@ def match_field_and_drone_trees(
 
     return drone_crowns_with_additional_attributes
 
+
 def is_overstory(tree_dataset: gpd.GeoDataFrame):
     """
     Compute which trees are in the overstory based on heights and locations
@@ -230,6 +231,7 @@ def is_overstory(tree_dataset: gpd.GeoDataFrame):
     is_overstory = np.logical_not(np.any(shorter_and_under_threshold, axis=1))
 
     return is_overstory
+
 
 def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # Filter out any dead trees
