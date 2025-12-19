@@ -141,14 +141,13 @@ def find_best_split_with_trees(
 
         # Randomly shuffle and select plots until we reach target validation pairs
         shuffled_plots = np.random.permutation(plot_ids)
-        val_plots = []
-        val_pairs_count = 0
+        weights_array = np.array([plot_weights[pid] for pid in shuffled_plots])
 
-        for plot_id in shuffled_plots:
-            if val_pairs_count >= target_val_pairs:
-                break
-            val_plots.append(plot_id)
-            val_pairs_count += plot_weights[plot_id]
+        # Cumulative sum to find how many plots needed for target val pairs
+        csum = np.cumsum(weights_array)
+        # Determine number of plots to reach at least target_val_pairs
+        n_val_plots = (csum >= target_val_pairs).argmax() + 1
+        val_plots = shuffled_plots[:n_val_plots].tolist()
 
         train_plots = [plot_id for plot_id in plot_ids if plot_id not in val_plots]
 
