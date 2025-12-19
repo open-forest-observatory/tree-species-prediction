@@ -75,9 +75,6 @@ class PathConfig:
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )
 
-    hdbscan_clustered_plots = Path(
-        intermediate_data_folder, "hdbscan_clustered_plots.gpkg"
-    )
     train_val_split_file = Path(intermediate_data_folder, "train_val_split.csv")
     train_val_split_gpkg_file = Path(
         intermediate_data_folder, "train_val_split_vis.gpkg"
