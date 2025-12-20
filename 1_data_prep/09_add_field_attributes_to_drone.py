@@ -344,7 +344,9 @@ if __name__ == "__main__":
         # Drop any crowns that were not matched
         updated_drone_crowns = updated_drone_crowns.dropna(subset=["species_code"])
         # Drop any dead trees
-        updated_drone_crowns = updated_drone_crowns[updated_drone_crowns.live_dead == "D"]
+        updated_drone_crowns = updated_drone_crowns[
+            updated_drone_crowns.live_dead == "D"
+        ]
         # Drop any crowns that were less than 10m tall
         updated_drone_crowns = updated_drone_crowns[
             updated_drone_crowns.height_field > 10
