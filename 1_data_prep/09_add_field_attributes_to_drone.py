@@ -234,11 +234,9 @@ def is_overstory(tree_dataset: gpd.GeoDataFrame):
 
 
 def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    # Filter out any dead trees
-    # note that we are intentionally keeping any trees with a nan status, since these are known to
-    # be live trees
+    # Filter out any dead trees that are decaying
     ground_reference_trees = ground_reference_trees[
-        ground_reference_trees.live_dead != "D"
+        ground_reference_trees.decay_class > 0
     ]
 
     # First replace any missing height values with pre-computed allometric values
@@ -345,6 +343,8 @@ if __name__ == "__main__":
 
         # Drop any crowns that were not matched
         updated_drone_crowns = updated_drone_crowns.dropna(subset=["species_code"])
+        # Drop any dead trees
+        updated_drone_crowns = updated_drone_crowns[updated_drone_crowns.live_dead == "D"]
         # Drop any crowns that were less than 10m tall
         updated_drone_crowns = updated_drone_crowns[
             updated_drone_crowns.height_field > 10
