@@ -293,7 +293,6 @@ if __name__ == "__main__":
     shift_per_dataset = json.load(open(path_config.shift_per_dataset_file, "r"))
     # Load the quality of the field reference trees
     shift_qualities = pd.read_csv(path_config.shift_quality_file)
-    # TODO potentially load hardwood fraction
 
     # Ensure that the height column is filled out and dead trees are removed
     ground_reference_trees = cleanup_field_trees(ground_reference_trees)
