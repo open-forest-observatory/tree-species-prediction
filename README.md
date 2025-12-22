@@ -23,7 +23,7 @@ The goal of photogrammetry is to reconstruct the 3D geometry of the scene from i
 - `1_compute_CHM.py`: This computes a canopy height model from the digital terrain model (DTM) and digital surface model (DSM) produced by photogrammetry. It requires that [rioxarray](https://corteva.github.io/rioxarray/stable/installation.html) be installed.
 - `2_tree_detection.py`: This detects trees in the CHM representation. The [Tree Detection Framework](https://github.com/open-forest-observatory/tree-detection-framework) must be installed.
 - `3_match_field_drone.py`: Install [spatial-utils](https://github.com/open-forest-observatory/spatial-utils) with the exception of the `poetry install` step. Then run `conda install scikit-learn`. Finally, from within the `spatial-utils` repository, run `poetry install`.
-- `add_field_attributes_to_drone.py`: This can be run with the tree-detection-framework dependencies. It performs matching between the field trees and drone-detected trees.
+- `09_add_field_attributes_to_drone.py`: This can be run with the tree-detection-framework dependencies. It performs matching between the field trees and drone-detected trees to add attributes from the field trees to the drone crowns. It also performs plot level filtering to remove plots with imprecisely registered reference data, low detection recall, or a high hardwood fraction. And at the tree level it removes dead trees and trees shorter than 10m.
 
 ## Training
 ### Work in Progress
