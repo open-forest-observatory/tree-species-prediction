@@ -235,7 +235,9 @@ def is_overstory(tree_dataset: gpd.GeoDataFrame):
 
 def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # Filter out any dead trees that are decaying
-    ground_reference_trees = ground_reference_trees[~(ground_reference_trees.decay_class > 2)]
+    ground_reference_trees = ground_reference_trees[
+        ~(ground_reference_trees.decay_class > 2)
+    ]
 
     # First replace any missing height values with pre-computed allometric values
     nan_height = ground_reference_trees.height.isna()
