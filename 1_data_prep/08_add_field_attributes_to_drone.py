@@ -247,7 +247,10 @@ def is_overstory(tree_dataset: gpd.GeoDataFrame):
 
 
 def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    # Filter out any dead trees that are decaying
+    # The decay class specifies how severely a dead trees is decaying. At values above decay class 2,
+    # it is expected that the stem may be broken. This would cause issues estimating the height from
+    # DBH, and likely suggests a tree that will overall not be reconstructed well. Therefore, these
+    # trees are dropped prior to matching.
     ground_reference_trees = ground_reference_trees[
         ~(ground_reference_trees.decay_class > 2)
     ]
