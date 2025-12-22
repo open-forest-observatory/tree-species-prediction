@@ -10,7 +10,20 @@ import shapely
 import _bootstrap
 from configs.path_config import path_config
 
-# from spatial_utils.geospatial import ensure_projected_CRS
+# These datasets have been identified as bad because of either low recall (first seven) or a high
+# fraction of hardwood species (remaining three).
+DATASETS_TO_EXCLUDE = [
+    "0069_000227_000233",
+    "0069_000781_000780",
+    "0069_000782_000780",
+    "0190_001218_001219",
+    "0273_001016_001015",
+    "0275_001017_001019",
+    "0276_001013_001014",
+    "0049_000136_000133",
+    "0100_000153_000155",
+    "0110_000136_000133",
+]
 
 
 # Taken from here:
@@ -292,6 +305,11 @@ if __name__ == "__main__":
     # Drop the .tif extension from the dataset names
     high_quality_shift_datasets = [x.split(".")[0] for x in high_quality_shift_datasets]
 
+    # Exclude the datasets that are specifically marked for exclusion
+    high_quality_shift_datasets = [
+        d for d in high_quality_shift_datasets if d not in DATASETS_TO_EXCLUDE
+    ]
+
     # Make the output folder
     Path(path_config.drone_crowns_with_field_attributes).mkdir(exist_ok=True)
 
@@ -353,9 +371,11 @@ if __name__ == "__main__":
             updated_drone_crowns.height_field > 10
         ]
 
-        updated_drone_crowns.to_file(
-            Path(
-                path_config.drone_crowns_with_field_attributes,
-                high_quality_dataset + ".gpkg",
+        # Only write out crowns if there are more than 10 trees remaining
+        if len(updated_drone_crowns) >= 10:
+            updated_drone_crowns.to_file(
+                Path(
+                    path_config.drone_crowns_with_field_attributes,
+                    high_quality_dataset + ".gpkg",
+                )
             )
-        )
