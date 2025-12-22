@@ -15,12 +15,11 @@ from configs.path_config import path_config
 
 # The image is downsampled to this fraction for accelerated rendering
 # Temporarily fixed to 1 since distortion modeling doesn't yet work on scaled images
-# TODO see if this is supported by the distortion modeling
 RENDER_IMAGE_SCALE = 0.25
 # Portions of the mesh within this distance of the labels are used for rendering
 MESH_BUFFER_RADIUS_METER = 50
 # Cameras within this radius of the annotations are used for training
-CAMERAS_BUFFER_RADIUS_METERS = 50
+CAMERAS_BUFFER_RADIUS_METERS = 80
 # Downsample target
 DOWNSAMPLE_TARGET = 1
 # Set points under this height to ground
