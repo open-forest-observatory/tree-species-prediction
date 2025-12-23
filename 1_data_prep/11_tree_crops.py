@@ -284,6 +284,10 @@ for dset_name in dset_names:
         mask_ids = np.squeeze(mask_ids)  # (H, W, 1) -> (H, W)
         unique_mask_values = np.unique(mask_ids)  # get unique mask ids
 
+        if mask_ids.dtype == np.uint32:
+            # Indicates a mallformed image in the current experiments
+            continue
+
         # load the json file that maps the mask IDs to their unique_ID values and create a mapping dict
         IDs_to_labels_path = src_info["IDs_to_labels_path"]
         with open(IDs_to_labels_path, "r") as f:
@@ -298,7 +302,6 @@ for dset_name in dset_names:
                 if ID_mapping.get(int(uid)) in labelled_tree_ids
             ]
 
-        # Vectorize the shapes from mask
         individual_shapes = list(shapes(mask_ids, mask=mask_ids != 0))
 
         # Extract the potentially-multiple polygons from each shape along with the original value,
@@ -351,8 +354,8 @@ for dset_name in dset_names:
         shapes_gdf.IDs = shapes_gdf.IDs.map(ID_mapping)
 
         # iterate over ids
-        for tree_unique_id, row in shapes_gdf.iterrows():
-            tree_unique_id = str(int(tree_unique_id)).zfill(
+        for _, row in shapes_gdf.iterrows():
+            tree_unique_id = str(int(row.IDs)).zfill(
                 5
             )  # convert tree uid to 0 padded str to match plot_attributes format
 
