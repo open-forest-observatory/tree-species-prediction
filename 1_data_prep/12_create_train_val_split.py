@@ -15,6 +15,7 @@ SEED = 35
 LUMP_LEVEL = "l4"
 CROSSWALK_PATH = path_config.species_class_crosswalk_file
 
+
 def load_and_apply_crosswalk(trees_gdf, crosswalk_path, lump_level="l2"):
     """
     Load species crosswalk and apply lumping to tree data.
@@ -378,6 +379,7 @@ def visualize_split_with_trees(plots_gdf, species_matrix, plot_weights, lump_lev
     plt.tight_layout()
     plt.show()
 
+
 def exclude_withheld_test_plots():
     """
     Exclude datasets that belong to withheld test plots.
@@ -390,7 +392,8 @@ def exclude_withheld_test_plots():
 
     # Extract the names of all dataset folders which have renders
     dataset_names = [
-        d for d in os.listdir(renders_dir)
+        d
+        for d in os.listdir(renders_dir)
         if os.path.isdir(os.path.join(renders_dir, d))
     ]
 
@@ -398,20 +401,25 @@ def exclude_withheld_test_plots():
     records = []
     for name in dataset_names:
         plot_id, mission_id_hn, mission_id_lo = name.split("_")
-        records.append({
-            "dataset": name,
-            "plot_id": plot_id,
-            "mission_id_hn": mission_id_hn,
-            "mission_id_lo": mission_id_lo,
-        })
+        records.append(
+            {
+                "dataset": name,
+                "plot_id": plot_id,
+                "mission_id_hn": mission_id_hn,
+                "mission_id_lo": mission_id_lo,
+            }
+        )
     all_datasets = pd.DataFrame(records)
 
-    # Read the withheld plot IDs and exclude datasets that belong to those plots. 
+    # Read the withheld plot IDs and exclude datasets that belong to those plots.
     # These plots are reserved for final testing.
     withheld_plot_ids = pd.read_csv(withheld_plots_csv, dtype=str)["plot_id"].tolist()
-    train_and_val_datasets = all_datasets[~all_datasets["plot_id"].isin(withheld_plot_ids)].reset_index(drop=True)
+    train_and_val_datasets = all_datasets[
+        ~all_datasets["plot_id"].isin(withheld_plot_ids)
+    ].reset_index(drop=True)
 
     return train_and_val_datasets
+
 
 if __name__ == "__main__":
 
