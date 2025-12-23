@@ -4,6 +4,7 @@ import time
 import uuid
 from math import ceil, floor
 from pathlib import Path
+from multiprocessing import Pool
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -139,7 +140,7 @@ def filter_contours_by_area(binary_mask, area_threshold=0.5):
     return filtered_mask
 
 
-def chip_images(dset_name, skipped_datasets):
+def chip_images(dset_name):
     # metadata records for this specific dataset
     records = []
 
@@ -159,7 +160,7 @@ def chip_images(dset_name, skipped_datasets):
     # Check if both folders exist
     if not nadir_base_path.exists() or not oblique_base_path.exists():
         print(f"Skipping dataset {dset_name}: missing folder(s)")
-        skipped_datasets.append(dset_name)
+        # skipped_datasets.append(dset_name)
         return
 
     # assemble list of tuples for this dataset's data paths
@@ -464,8 +465,10 @@ mapping_stats = {
     "without_species_label": 0,
 }
 
-for dset_name in dset_names:
-    chip_images(dset_name=dset_name, skipped_datasets=skipped_datasets)
+
+# Execute chipping
+with Pool(1) as p:
+    p.map(chip_images, dset_names)
 
 # Print final summary
 print(f"Processing complete!")
