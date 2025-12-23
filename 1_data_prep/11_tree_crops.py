@@ -3,8 +3,8 @@ import os
 import time
 import uuid
 from math import ceil, floor
-from pathlib import Path
 from multiprocessing import Pool
+from pathlib import Path
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
