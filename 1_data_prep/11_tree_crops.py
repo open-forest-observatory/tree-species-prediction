@@ -178,7 +178,7 @@ all_species_mappings = load_all_species_mappings(species_crosswalk_path)
 
 
 # Specify datasets to process (set to None to process all datasets)
-DATASETS_TO_PROCESS = ["0103_000191_000188"]
+DATASETS_TO_PROCESS = None
 
 if DATASETS_TO_PROCESS is None:
     dset_names = sorted(os.listdir(tree_label_mask_paths))
