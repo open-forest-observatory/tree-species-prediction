@@ -3,15 +3,16 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import os
 
 import _bootstrap
 from configs.path_config import path_config
 
+# Set constants
 VAL_FRACTION = 0.2
 SEED = 35
-LUMP_LEVEL = "l3"
+LUMP_LEVEL = "l4"
 CROSSWALK_PATH = path_config.species_class_crosswalk_file
-
 
 def load_and_apply_crosswalk(trees_gdf, crosswalk_path, lump_level="l2"):
     """
@@ -74,6 +75,9 @@ def create_species_quantity_matrix(trees_gdf, plot_ids, plot_weights, use_lumped
         plot_ids: List of plot IDs
         plot_weights: Dictionary mapping plot_id to weight (number of pairs)
         use_lumped: If True, use 'lumped_species' column, else use 'species_code'
+
+    Returns:
+        species_matrix: DataFrame with plots as rows, species as columns, tree counts as values
     """
     # Filter trees to only include plots we're working with
     trees_filtered = trees_gdf[trees_gdf["plot_id"].isin(plot_ids)].copy()
@@ -117,6 +121,16 @@ def find_best_split_with_trees(
     """
     Find the best train/val split that minimizes species composition differences.
     Uses weighted contributions based on number of drone pairs per plot.
+
+    Args:
+        plots_gdf: GeoDataFrame of plots
+        species_matrix: DataFrame of species quantities per plot
+        plot_weights: Dictionary mapping plot_id to weight (number of datasets it appears in)
+        val_frac: Target fraction of total pairs in validation set
+        seed: Random seed for reproducibility
+
+    Returns:
+        best_split: Tuple of (train_plot_ids, val_plot_ids)
     """
     np.random.seed(seed)
 
@@ -363,14 +377,45 @@ def visualize_split_with_trees(plots_gdf, species_matrix, plot_weights, lump_lev
     plt.tight_layout()
     plt.show()
 
+def exclude_withheld_test_plots():
+    """
+    Exclude datasets that belong to withheld test plots.
+
+    Returns:
+        pd.DataFrame: DataFrame of datasets belonging to train and val plots only.
+    """
+    renders_dir = path_config.rendered_instance_ids
+    withheld_plots_csv = path_config.withheld_plots_file
+
+    # Extract the names of all dataset folders which have renders
+    dataset_names = [
+        d for d in os.listdir(renders_dir)
+        if os.path.isdir(os.path.join(renders_dir, d))
+    ]
+
+    # Create a dataframe with plot and mission IDs
+    records = []
+    for name in dataset_names:
+        plot_id, mission_id_hn, mission_id_lo = name.split("_")
+        records.append({
+            "dataset": name,
+            "plot_id": plot_id,
+            "mission_id_hn": mission_id_hn,
+            "mission_id_lo": mission_id_lo,
+        })
+    all_datasets = pd.DataFrame(records)
+
+    # Read the withheld plot IDs and exclude datasets that belong to those plots. 
+    # These plots are reserved for final testing.
+    withheld_plot_ids = pd.read_csv(withheld_plots_csv, dtype=str)["plot_id"].tolist()
+    train_and_val_datasets = all_datasets[~all_datasets["plot_id"].isin(withheld_plot_ids)].reset_index(drop=True)
+
+    return train_and_val_datasets
 
 if __name__ == "__main__":
 
-    # TODO: There is another step to be added before this where we filter out the withheld test-plots datasets
-    # from the list that will be containing train & val datasets. The below file is a result of that.
-    pairs_df = pd.read_csv(
-        "/ofo-share/scratch/amritha/tree-species-scratch/november-run/train_and_val_dsets.csv"
-    )
+    # Get a dataframe of all datasets excluding those from withheld test plots
+    pairs_df = exclude_withheld_test_plots()
     pairs_df["plot_id"] = pairs_df["plot_id"].apply(lambda x: f"{int(x):04d}")
 
     # Calculate weights: number of drone pairs assigned per plot

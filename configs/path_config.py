@@ -121,6 +121,8 @@ class PathConfig:
         intermediate_data_folder, "mmpretrain_dataset"
     )
 
+    withheld_plots_file: Path = Path(raw_folder, "withheld_ground_plot_ids_v1.csv")
+    
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
         hints = get_type_hints(self.__class__)  # get types of class attributes
