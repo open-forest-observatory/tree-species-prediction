@@ -178,7 +178,7 @@ all_species_mappings = load_all_species_mappings(species_crosswalk_path)
 
 
 # Specify datasets to process (set to None to process all datasets)
-DATASETS_TO_PROCESS = ["0068_000434_000440"]
+DATASETS_TO_PROCESS = ["0103_000191_000188"]
 
 if DATASETS_TO_PROCESS is None:
     dset_names = sorted(os.listdir(tree_label_mask_paths))
@@ -303,6 +303,10 @@ for dset_name in dset_names:
             ]
 
         individual_shapes = list(shapes(mask_ids, mask=mask_ids != 0))
+
+        # No polygons, skip
+        if len(individual_shapes) == 0:
+            continue
 
         # Extract the potentially-multiple polygons from each shape along with the original value,
         # now encoded as a zero-padded string
