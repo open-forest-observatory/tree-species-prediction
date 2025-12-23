@@ -1,31 +1,25 @@
 import json
 import os
+import time
 import uuid
-from pathlib import Path
 from math import ceil, floor
+from pathlib import Path
 
 import geopandas as gpd
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from rasterio.features import shapes
-
-from shapely.affinity import translate
-import numpy as np
-from rasterio import features
-
+import shapely
 from imageio import imread, imwrite
 from PIL import Image
+from rasterio import features
+from rasterio.features import shapes
 from scipy.ndimage import binary_dilation, label
+from shapely.affinity import translate
 from tqdm import tqdm
 
 import _bootstrap
 from configs.path_config import path_config
-
-
-import time
-import shapely
-import geopandas as gpd
-import matplotlib.pyplot as plt
 
 # Background masking configuration
 MASK_BACKGROUND = True  # Whether to mask out background trees
