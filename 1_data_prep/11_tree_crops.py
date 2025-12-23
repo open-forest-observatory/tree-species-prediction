@@ -139,37 +139,7 @@ def filter_contours_by_area(binary_mask, area_threshold=0.5):
     return filtered_mask
 
 
-# Load all species mappings
-all_species_mappings = load_all_species_mappings(species_crosswalk_path)
-
-
-# Specify datasets to process (set to None to process all datasets)
-DATASETS_TO_PROCESS = None
-
-if DATASETS_TO_PROCESS is None:
-    dset_names = sorted(os.listdir(tree_label_mask_paths))
-    print(f"Processing all {len(dset_names)} datasets")
-else:
-    all_dset_names = sorted(os.listdir(tree_label_mask_paths))
-    dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
-    print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
-
-dset_gt_mapping = {
-    dset_name: gpd.read_file(Path(ground_data_path, dset_name + ".gpkg"))
-    for dset_name in dset_names
-}
-
-# Process each dataset individually
-missing_img_ctr = 0
-skipped_datasets = []
-mapping_stats = {
-    "total_processed": 0,
-    "saved_crops": 0,
-    "with_species_label": 0,
-    "without_species_label": 0,
-}
-
-for dset_name in dset_names:
+def chip_images(dset_name, skipped_datasets):
     # metadata records for this specific dataset
     records = []
 
@@ -180,7 +150,7 @@ for dset_name in dset_names:
     metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
     if metadata_fp.exists():
         print(f"Skipping dataset {dset_name}: has already been processed")
-        continue
+        return
 
     # get tif mask files from all the subdirs
     nadir_base_path = Path(tree_label_mask_paths, dset_name, "nadir", nadir_id)
@@ -190,7 +160,7 @@ for dset_name in dset_names:
     if not nadir_base_path.exists() or not oblique_base_path.exists():
         print(f"Skipping dataset {dset_name}: missing folder(s)")
         skipped_datasets.append(dset_name)
-        continue
+        return
 
     # assemble list of tuples for this dataset's data paths
     # each item in the list will be (src_info, mask_fp, img_path)
@@ -227,7 +197,7 @@ for dset_name in dset_names:
 
     if not data_paths:
         print(f"No data paths found for dataset {dset_name}")
-        continue
+        return
 
     pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
     pbar.set_description(f"Processing dataset: {dset_name}")
@@ -463,6 +433,39 @@ for dset_name in dset_names:
         print(f"Metadata saved to {metadata_fp}")
     else:
         print(f"No records to save for dataset {dset_name}")
+
+
+# Load all species mappings
+all_species_mappings = load_all_species_mappings(species_crosswalk_path)
+
+# Specify datasets to process (set to None to process all datasets)
+DATASETS_TO_PROCESS = None
+
+if DATASETS_TO_PROCESS is None:
+    dset_names = sorted(os.listdir(tree_label_mask_paths))
+    print(f"Processing all {len(dset_names)} datasets")
+else:
+    all_dset_names = sorted(os.listdir(tree_label_mask_paths))
+    dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
+    print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
+
+dset_gt_mapping = {
+    dset_name: gpd.read_file(Path(ground_data_path, dset_name + ".gpkg"))
+    for dset_name in dset_names
+}
+
+# Process each dataset individually
+missing_img_ctr = 0
+skipped_datasets = []
+mapping_stats = {
+    "total_processed": 0,
+    "saved_crops": 0,
+    "with_species_label": 0,
+    "without_species_label": 0,
+}
+
+for dset_name in dset_names:
+    chip_images(dset_name=dset_name, skipped_datasets=skipped_datasets)
 
 # Print final summary
 print(f"Processing complete!")
