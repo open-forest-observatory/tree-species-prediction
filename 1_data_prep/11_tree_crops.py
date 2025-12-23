@@ -2,17 +2,30 @@ import json
 import os
 import uuid
 from pathlib import Path
+from math import ceil, floor
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import tifffile as tif
+from rasterio.features import shapes
+
+from shapely.affinity import translate
+import numpy as np
+from rasterio import features
+
+from imageio import imread, imwrite
 from PIL import Image
 from scipy.ndimage import binary_dilation, label
 from tqdm import tqdm
 
 import _bootstrap
 from configs.path_config import path_config
+
+
+import time
+import shapely
+import geopandas as gpd
+import matplotlib.pyplot as plt
 
 # Background masking configuration
 MASK_BACKGROUND = True  # Whether to mask out background trees
@@ -165,7 +178,7 @@ all_species_mappings = load_all_species_mappings(species_crosswalk_path)
 
 
 # Specify datasets to process (set to None to process all datasets)
-DATASETS_TO_PROCESS = None
+DATASETS_TO_PROCESS = ["0068_000434_000440"]
 
 if DATASETS_TO_PROCESS is None:
     dset_names = sorted(os.listdir(tree_label_mask_paths))
@@ -266,11 +279,8 @@ for dset_name in dset_names:
         img_array = (
             np.array(img) if MASK_BACKGROUND else None
         )  # Convert to numpy array for masking
-        img_cx, img_cy = img.width / 2, img.height / 2
-        safe_radius = min(
-            img_cx, img_cy
-        )  # how far a crop can be from the center to be acceptable distortion
-        mask_ids = tif.imread(mask_file_path)  # load tif tree id mask
+
+        mask_ids = imread(mask_file_path)  # load tif tree id mask
         mask_ids = np.squeeze(mask_ids)  # (H, W, 1) -> (H, W)
         unique_mask_values = np.unique(mask_ids)  # get unique mask ids
 
@@ -288,18 +298,60 @@ for dset_name in dset_names:
                 if ID_mapping.get(int(uid)) in labelled_tree_ids
             ]
 
+        # Vectorize the shapes from mask
+        individual_shapes = list(shapes(mask_ids, mask=mask_ids != 0))
+
+        # Extract the potentially-multiple polygons from each shape along with the original value,
+        # now encoded as a zero-padded string
+        polys = [
+            (shapely.Polygon(poly), int(shape[1]))
+            for shape in individual_shapes
+            for poly in shape[0]["coordinates"]
+        ]
+        # Split into geometries and IDs and build a geodataframe
+        geometry, ids = list(zip(*polys))
+        # Create a GDF using an arbitrary CRS
+        shapes_gdf = gpd.GeoDataFrame({"geometry": geometry, "IDs": ids}, crs=3310)
+
+        # Store the area as an attribute for future use
+        shapes_gdf["polygon_area"] = shapes_gdf.area
+        # Find the max area per ID
+        max_area_per_class = shapes_gdf.groupby("IDs").max()
+
+        # Merge the area and max area by IDs
+        shapes_gdf = shapes_gdf.join(max_area_per_class, on="IDs", rsuffix="_max")
+
+        # Compute for each polygon what fraction of the max area for that ID it is
+        shapes_gdf["frac_of_max"] = (
+            shapes_gdf["polygon_area"] / shapes_gdf["polygon_area_max"]
+        )
+        # Remove the polygons which are less than the threshold fraction of the max for that ID
+        shapes_gdf = shapes_gdf[shapes_gdf["frac_of_max"] > 0.5]
+        # Remove the columns we no longer need
+        shapes_gdf.drop(
+            ["frac_of_max", "polygon_area", "polygon_area_max"], axis=1, inplace=True
+        )
+
+        # Merge by ID, forming multipolygons as needed
+        shapes_gdf = shapes_gdf.dissolve("IDs", as_index=False)
+
+        # Compute the axis-aligned height and width of each ID
+        width = shapes_gdf.bounds.maxx - shapes_gdf.bounds.minx
+        height = shapes_gdf.bounds.maxy - shapes_gdf.bounds.miny
+
+        # Remove IDs that are too small
+        valid_dims = (height > IMAGE_RES_CONSTRAINT) & (width > IMAGE_RES_CONSTRAINT)
+        shapes_gdf = shapes_gdf[valid_dims]
+
+        # Remove any zero area polygons
+        shapes_gdf = shapes_gdf[shapes_gdf.area > 0]
+
+        # Convert IDs from the 1-indexed consequetive values used for geograypher rendering to the
+        # IDs used for the rows in the crown geodataframe
+        shapes_gdf.IDs = shapes_gdf.IDs.map(ID_mapping)
+
         # iterate over ids
-        for tree_mask_value in unique_mask_values:
-            if np.isnan(tree_mask_value):  # skip nan values
-                continue
-
-            # map mask value -> tree unique ID
-            tree_unique_id = ID_mapping.get(int(tree_mask_value))
-            if tree_unique_id is None:
-                raise ValueError(
-                    f"Tree unique_ID for mask value {tree_mask_value} is None. Check {IDs_to_labels_path}"
-                )
-
+        for tree_unique_id, row in shapes_gdf.iterrows():
             tree_unique_id = str(int(tree_unique_id)).zfill(
                 5
             )  # convert tree uid to 0 padded str to match plot_attributes format
@@ -330,56 +382,49 @@ for dset_name in dset_names:
             # Determine directory structure based on whether species exists
             species_dir_label = "unlabelled" if original_species is None else "labelled"
 
-            # Create binary mask for current tree and filter contours
-            tree_binary_mask = mask_ids == tree_mask_value
-            filtered_mask = filter_contours_by_area(
-                tree_binary_mask, area_threshold=0.5
-            )
+            # Create the mask
+            minx, miny, maxx, maxy = row.geometry.bounds
+            width = maxx - minx
+            height = maxy - miny
 
-            ys, xs = np.where(filtered_mask)
+            pad_width = width * BBOX_PADDING_RATIO
+            pad_height = height * BBOX_PADDING_RATIO
 
-            if ys.size == 0 or xs.size == 0:
-                continue  # skip if no pixels found after filtering
+            # padded floating coords
+            left = minx - pad_width
+            top = miny - pad_height
+            right = maxx + pad_width
+            bottom = maxy + pad_height
 
-            y0, y1, x0, x1 = (
-                ys.min(),
-                ys.max(),
-                xs.min(),
-                xs.max(),
-            )  # current tree img bounds
+            # image shape (rows=height, cols=width)
+            img_h, img_w = img_array.shape[:2]
 
-            # check for 'bad' crops
-            # currently looks for low res images (h or w < 250 px),
-            # or crops near the edge of the images liable for distortion (any bbox edge <250px away from full img edge)
+            # integer pixel coordinates, clamped to image bounds
+            crop_minx = max(0, int(floor(left)))
+            crop_miny = max(0, int(floor(top)))
+            crop_maxx = min(img_w, int(ceil(right)))
+            crop_maxy = min(img_h, int(ceil(bottom)))
 
-            # low res img
-            # typically trees too far off in the distance
-            if y1 - y0 < IMAGE_RES_CONSTRAINT or x1 - x0 < IMAGE_RES_CONSTRAINT:
-                continue
+            # extract crop
+            crop = img_array[crop_miny:crop_maxy, crop_minx:crop_maxx].copy()
 
             # Apply background masking if enabled
             if MASK_BACKGROUND:
-                masked_img_array = create_masked_image(
-                    img_array, filtered_mask, MASK_BUFFER_PIXELS, BACKGROUND_VALUE
+                # shift geometry into crop-local coordinates (use integer crop offsets)
+                shifted_geometry = translate(
+                    row.geometry, xoff=-crop_minx, yoff=-crop_miny
                 )
 
-                # Convert back to PIL Image for cropping
-                img_to_crop = Image.fromarray(masked_img_array)
-            else:
-                img_to_crop = img
+                # rasterize the shifted geometry to a mask (0 inside geometry, 1 outside)
+                mask = features.rasterize(
+                    [(shifted_geometry, 0)],
+                    out_shape=(crop.shape[0], crop.shape[1]),
+                    fill=1,
+                    dtype="uint8",
+                ).astype(bool)
 
-            # crop image to bbox plus padding
-            # cropping in PIL is left, top, right, bottom
-            bbox_pad_width, bbox_pad_height = (x1 - x0) * BBOX_PADDING_RATIO, (
-                y1 - y0
-            ) * BBOX_PADDING_RATIO
-            bbox = (
-                x0 - bbox_pad_width,
-                y0 - bbox_pad_height,
-                x1 + bbox_pad_width,
-                y1 + bbox_pad_height,
-            )
-            cropped_img = img_to_crop.crop(bbox)
+                bg = np.array([128, 128, 128], dtype=crop.dtype)
+                crop[mask] = bg
 
             fp = Path(
                 output_path,  # base dir to the training data folder
@@ -396,15 +441,13 @@ for dset_name in dset_names:
                 :10
             ]  # take first 10 digits of a UUID-derived int
             crop_path = fp / f"{image_id}.png"
-
-            cropped_img.save(crop_path)  # save cropped img
+            imwrite(crop_path, crop)  # save cropped img
             mapping_stats["saved_crops"] += 1
 
             # Build metadata record with all species levels
             record = {
                 "image_id": image_id,
                 "image_path": str(crop_path.resolve()),
-                "mask_value": tree_mask_value,
                 "tree_unique_id": tree_unique_id,
                 "species_original": original_species,
                 "species_l1": mapped_species_all_levels["l1"],
@@ -436,6 +479,8 @@ for dset_name in dset_names:
         ]
 
         meta_df = pd.DataFrame(records, columns=columns)
+
+        labelled_output_dir.mkdir(parents=True, exist_ok=True)
 
         metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
         meta_df.to_csv(metadata_fp, index=False)
