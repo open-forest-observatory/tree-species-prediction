@@ -80,6 +80,12 @@ class PathConfig:
         intermediate_data_folder, "train_val_split_vis.gpkg"
     )
 
+    # Inputs to 09_add_field_attributes_to_drone.py
+    # The quality of the shift that was manually found
+    shift_quality_file = Path(intermediate_data_folder, "shift_quality.csv")
+    # Shift per dataset
+    shift_per_dataset_file = Path(intermediate_data_folder, "shift_per_dataset.json")
+
     drone_images_root: Path = Path(
         "/ofo-share/catalog-data-prep/01_raw-imagery-ingestion/2_sorted"
     )
