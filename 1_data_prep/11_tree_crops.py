@@ -145,34 +145,6 @@ def filter_contours_by_area(binary_mask, area_threshold=0.5):
     return filtered_mask
 
 
-def create_masked_image(img_array, tree_mask, buffer_pixels, background_value):
-    """
-    Create a masked version of the image where background is set to a neutral value.
-
-    Args:
-        img_array (np.ndarray): Original image as numpy array (H, W, C)
-        tree_mask (np.ndarray): Binary mask for the tree (H, W), True for tree pixels
-        buffer_pixels (int): Number of pixels to dilate the mask (buffer zone)
-        background_value (tuple): Values for 3 channels to set background pixels (0-255)
-
-    Returns:
-        np.ndarray: Masked image array
-    """
-    # Create dilated mask (adds buffer around the tree)
-    if buffer_pixels > 0:
-        dilated_mask = binary_dilation(tree_mask, iterations=buffer_pixels)
-    else:
-        dilated_mask = tree_mask
-
-    # Create output image
-    masked_img = img_array.copy()
-
-    # Set background pixels to background_value
-    masked_img[~dilated_mask] = background_value
-
-    return masked_img
-
-
 # Load all species mappings
 all_species_mappings = load_all_species_mappings(species_crosswalk_path)
 
@@ -422,15 +394,18 @@ for dset_name in dset_names:
                     row.geometry, xoff=-crop_minx, yoff=-crop_miny
                 )
 
+                # Expand the mask
+                buffered_geometry = geometry.buffer(MASK_BUFFER_PIXELS)
+
                 # rasterize the shifted geometry to a mask (0 inside geometry, 1 outside)
                 mask = features.rasterize(
-                    [(shifted_geometry, 0)],
+                    [(buffered_geometry, 0)],
                     out_shape=(crop.shape[0], crop.shape[1]),
                     fill=1,
                     dtype="uint8",
                 ).astype(bool)
 
-                bg = np.array([128, 128, 128], dtype=crop.dtype)
+                bg = np.array(BACKGROUND_VALUE, dtype=crop.dtype)
                 crop[mask] = bg
 
             fp = Path(
