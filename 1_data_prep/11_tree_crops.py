@@ -159,7 +159,7 @@ def chip_images(dset_name: str) -> tuple:
         "saved_crops": 0,
         "with_species_label": 0,
         "without_species_label": 0,
-        "missing_img_ctr": 0,
+        "missing_img_cts": 0,
     }
 
     # Load the per-tree metadata, including species information
@@ -215,7 +215,7 @@ def chip_images(dset_name: str) -> tuple:
                     print(
                         f"WARNING: mask file: {mask_fp} has no corresponding image file"
                     )
-                    mapping_stats["missing_img_ctr"] += 1
+                    mapping_stats["missing_img_cts"] += 1
         except FileNotFoundError as fne:
             print(f"WARNING: Missing label directory {flight_dir}")
             continue
@@ -485,7 +485,7 @@ skipped_datasets = [
     dset_name for dset_name, success in zip(dset_names, successes) if not success
 ]
 
-missing_img_ctr = sum([rd["missing_image_cts"] for rd in results_dicts])
+missing_img_cts = sum([rd["missing_image_cts"] for rd in results_dicts])
 total_processed = sum([rd["total_processed"] for rd in results_dicts])
 with_species_label = sum([rd["with_species_label"] for rd in results_dicts])
 without_species_label = sum([rd["without_species_label"] for rd in results_dicts])
@@ -495,7 +495,7 @@ saved_crops = sum([rd["saved_crops"] for rd in results_dicts])
 # Print final summary
 print(f"Processing complete!")
 print(
-    f"Found {missing_img_ctr} mask files without corresponding image files"
+    f"Found {missing_img_cts} mask files without corresponding image files"
 )  # should be 0
 if skipped_datasets:
     print(f"Skipped datasets due to missing folders: {skipped_datasets}")
