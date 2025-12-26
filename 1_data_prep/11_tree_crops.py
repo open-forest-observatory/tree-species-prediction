@@ -1,13 +1,11 @@
 import json
 import os
-import time
 import uuid
 from math import ceil, floor
 from multiprocessing import Pool
 from pathlib import Path
 
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shapely
@@ -15,7 +13,7 @@ from imageio import imread, imwrite
 from PIL import Image
 from rasterio import features
 from rasterio.features import shapes
-from scipy.ndimage import binary_dilation, label
+from scipy.ndimage import label
 from shapely.affinity import translate
 from tqdm import tqdm
 
@@ -153,7 +151,7 @@ def chip_images(dset_name: str) -> tuple:
 
     Returns:
         bool: Whether the run completed successfully without skipping
-        int: How many images were missing
+        dict: Performance counters, specifying how many images were processed and how many were skipped
     """
     # Initialize the performance counters
     mapping_stats = {
@@ -170,8 +168,7 @@ def chip_images(dset_name: str) -> tuple:
     # metadata records for this specific dataset
     records = []
 
-    # How many source images are missing
-
+    # Extract the mission IDs
     _, nadir_id, oblique_id = dset_name.split("_")
 
     # If metadata file for this dataset already exists, skip processing it again
