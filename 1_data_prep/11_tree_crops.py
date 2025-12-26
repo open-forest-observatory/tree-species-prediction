@@ -37,6 +37,8 @@ IMAGE_RES_CONSTRAINT = 250  # min edge length (height or width) to save
 LABELLED_ONLY = (
     True  # if using on all images (labelled and not labelled) -> set to False
 )
+# The number of processes to use for chipping.
+N_PROCESSES = 8
 
 # Path configurations
 tree_label_mask_paths = path_config.rendered_instance_ids
@@ -140,18 +142,30 @@ def filter_contours_by_area(binary_mask, area_threshold=0.5):
     return filtered_mask
 
 
-def chip_images(dset_name):
+def chip_images(dset_name: str) -> tuple:
+    """Create the per-tree chips for one dataset
+
+    Args:
+        dset_name (str): The dataset name in the <plot_id>_<hn>_<lo> format
+
+    Returns:
+        bool: Whether the run completed successfully without skipping
+        int: How many images were missing
+    """
     # metadata records for this specific dataset
     records = []
 
-    dset_idx, nadir_id, oblique_id = dset_name.split("_")
+    # How many source images are missing
+    missing_img_ctr = 0
+
+    _, nadir_id, oblique_id = dset_name.split("_")
 
     # If metadata file for this dataset already exists, skip processing it again
     labelled_output_dir = Path(output_path, "labelled", dset_name)
     metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
     if metadata_fp.exists():
         print(f"Skipping dataset {dset_name}: has already been processed")
-        return
+        return False, missing_img_ctr
 
     # get tif mask files from all the subdirs
     nadir_base_path = Path(tree_label_mask_paths, dset_name, "nadir", nadir_id)
@@ -160,8 +174,7 @@ def chip_images(dset_name):
     # Check if both folders exist
     if not nadir_base_path.exists() or not oblique_base_path.exists():
         print(f"Skipping dataset {dset_name}: missing folder(s)")
-        # skipped_datasets.append(dset_name)
-        return
+        return False, missing_img_ctr
 
     # assemble list of tuples for this dataset's data paths
     # each item in the list will be (src_info, mask_fp, img_path)
@@ -198,7 +211,7 @@ def chip_images(dset_name):
 
     if not data_paths:
         print(f"No data paths found for dataset {dset_name}")
-        return
+        return False, missing_img_ctr
 
     pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
     pbar.set_description(f"Processing dataset: {dset_name}")
@@ -360,7 +373,7 @@ def chip_images(dset_name):
                 )
 
                 # Expand the mask
-                buffered_geometry = geometry.buffer(MASK_BUFFER_PIXELS)
+                buffered_geometry = shifted_geometry.buffer(MASK_BUFFER_PIXELS)
 
                 # rasterize the shifted geometry to a mask (0 inside geometry, 1 outside)
                 mask = features.rasterize(
@@ -435,6 +448,8 @@ def chip_images(dset_name):
     else:
         print(f"No records to save for dataset {dset_name}")
 
+    return True, missing_img_ctr
+
 
 # Load all species mappings
 all_species_mappings = load_all_species_mappings(species_crosswalk_path)
@@ -466,9 +481,18 @@ mapping_stats = {
 }
 
 
-# Execute chipping
-with Pool(1) as p:
-    p.map(chip_images, dset_names)
+# Execute chipping with multiprocessing. This is the slow step.
+with Pool(N_PROCESSES) as p:
+    # Get the list of returns
+    multiprocessing_result = p.map(chip_images, dset_names)
+
+# Reformat the results of the run
+successes, missing_img_counts = zip(multiprocessing_result)
+skipped_datasets = [
+    dset_name for dset_name, success in zip(dset_names, successes) if not success
+]
+missing_img_ctr = sum(missing_img_counts)
+
 
 # Print final summary
 print(f"Processing complete!")
