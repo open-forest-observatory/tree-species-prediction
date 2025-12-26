@@ -47,6 +47,9 @@ ground_data_path = path_config.drone_crowns_with_field_attributes
 output_path = path_config.cropped_tree_training_images
 species_crosswalk_path = path_config.species_class_crosswalk_file
 
+# Specify datasets to process (set to None to process all datasets)
+DATASETS_TO_PROCESS = None
+
 
 def load_all_species_mappings(crosswalk_path):
     """
@@ -152,11 +155,22 @@ def chip_images(dset_name: str) -> tuple:
         bool: Whether the run completed successfully without skipping
         int: How many images were missing
     """
+    # Initialize the performance counters
+    mapping_stats = {
+        "total_processed": 0,
+        "saved_crops": 0,
+        "with_species_label": 0,
+        "without_species_label": 0,
+        "missing_img_ctr": 0,
+    }
+
+    # Load the per-tree metadata, including species information
+    dset_gt_mapping = gpd.read_file(Path(ground_data_path, dset_name + ".gpkg"))
+
     # metadata records for this specific dataset
     records = []
 
     # How many source images are missing
-    missing_img_ctr = 0
 
     _, nadir_id, oblique_id = dset_name.split("_")
 
@@ -165,7 +179,7 @@ def chip_images(dset_name: str) -> tuple:
     metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
     if metadata_fp.exists():
         print(f"Skipping dataset {dset_name}: has already been processed")
-        return False, missing_img_ctr
+        return False, mapping_stats
 
     # get tif mask files from all the subdirs
     nadir_base_path = Path(tree_label_mask_paths, dset_name, "nadir", nadir_id)
@@ -174,7 +188,7 @@ def chip_images(dset_name: str) -> tuple:
     # Check if both folders exist
     if not nadir_base_path.exists() or not oblique_base_path.exists():
         print(f"Skipping dataset {dset_name}: missing folder(s)")
-        return False, missing_img_ctr
+        return False, mapping_stats
 
     # assemble list of tuples for this dataset's data paths
     # each item in the list will be (src_info, mask_fp, img_path)
@@ -204,20 +218,20 @@ def chip_images(dset_name: str) -> tuple:
                     print(
                         f"WARNING: mask file: {mask_fp} has no corresponding image file"
                     )
-                    missing_img_ctr += 1
+                    mapping_stats["missing_img_ctr"] += 1
         except FileNotFoundError as fne:
             print(f"WARNING: Missing label directory {flight_dir}")
             continue
 
     if not data_paths:
         print(f"No data paths found for dataset {dset_name}")
-        return False, missing_img_ctr
+        return False, mapping_stats
 
     pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
     pbar.set_description(f"Processing dataset: {dset_name}")
 
     for src_info, mask_file_path, img_file_path in pbar:
-        plot_attributes = dset_gt_mapping[src_info["dset_name"]][
+        plot_attributes = dset_gt_mapping[
             ["unique_ID", "species_code"]
         ]  # id and species cols of ground ref geodataframe
         labelled_tree_ids = plot_attributes[
@@ -448,14 +462,11 @@ def chip_images(dset_name: str) -> tuple:
     else:
         print(f"No records to save for dataset {dset_name}")
 
-    return True, missing_img_ctr
+    return True, mapping_stats
 
 
 # Load all species mappings
 all_species_mappings = load_all_species_mappings(species_crosswalk_path)
-
-# Specify datasets to process (set to None to process all datasets)
-DATASETS_TO_PROCESS = None
 
 if DATASETS_TO_PROCESS is None:
     dset_names = sorted(os.listdir(tree_label_mask_paths))
@@ -465,33 +476,23 @@ else:
     dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
     print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
 
-dset_gt_mapping = {
-    dset_name: gpd.read_file(Path(ground_data_path, dset_name + ".gpkg"))
-    for dset_name in dset_names
-}
-
-# Process each dataset individually
-missing_img_ctr = 0
-skipped_datasets = []
-mapping_stats = {
-    "total_processed": 0,
-    "saved_crops": 0,
-    "with_species_label": 0,
-    "without_species_label": 0,
-}
-
 
 # Execute chipping with multiprocessing. This is the slow step.
 with Pool(N_PROCESSES) as p:
     # Get the list of returns
-    multiprocessing_result = p.map(chip_images, dset_names)
+    multiprocessing_result = p.map(chip_images, dset_names, chunksize=1)
 
 # Reformat the results of the run
-successes, missing_img_counts = zip(*multiprocessing_result)
+successes, results_dicts = zip(*multiprocessing_result)
 skipped_datasets = [
     dset_name for dset_name, success in zip(dset_names, successes) if not success
 ]
-missing_img_ctr = sum(missing_img_counts)
+
+missing_img_ctr = sum([rd["missing_image_cts"] for rd in results_dicts])
+total_processed = sum([rd["total_processed"] for rd in results_dicts])
+with_species_label = sum([rd["with_species_label"] for rd in results_dicts])
+without_species_label = sum([rd["without_species_label"] for rd in results_dicts])
+saved_crops = sum([rd["saved_crops"] for rd in results_dicts])
 
 
 # Print final summary
@@ -503,10 +504,10 @@ if skipped_datasets:
     print(f"Skipped datasets due to missing folders: {skipped_datasets}")
 
 print(f"Summary:")
-print(f"Total trees processed: {mapping_stats['total_processed']}")
-print(f"Trees with species labels: {mapping_stats['with_species_label']}")
-print(f"Trees without species labels: {mapping_stats['without_species_label']}")
-print(f"Total crops saved: {mapping_stats['saved_crops']}")
+print(f"Total trees processed: {total_processed}")
+print(f"Trees with species labels: {with_species_label}")
+print(f"Trees without species labels: {without_species_label}")
+print(f"Total crops saved: {saved_crops}")
 
 # Print summary of available classes at each level
 for level in ["l1", "l2", "l3", "l4"]:
