@@ -487,7 +487,7 @@ with Pool(N_PROCESSES) as p:
     multiprocessing_result = p.map(chip_images, dset_names)
 
 # Reformat the results of the run
-successes, missing_img_counts = zip(multiprocessing_result)
+successes, missing_img_counts = zip(*multiprocessing_result)
 skipped_datasets = [
     dset_name for dset_name, success in zip(dset_names, successes) if not success
 ]
