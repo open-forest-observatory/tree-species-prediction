@@ -22,7 +22,7 @@ spec:
               - key: nvidia.com/gpu.present
                 operator: DoesNotExist
 
-  # A list of input parameters available to the workflow at runtime. 
+  # A list of input parameters available to the workflow at runtime.
   # These parameters can be referenced throughout the workflow templates using {{workflow.parameters.<name>}}
   arguments:
     parameters:
@@ -30,25 +30,6 @@ spec:
         value: "argo-input/config-lists/config_list.txt"
       - name: RUN_FOLDER
         value: "default-run"
-      - name: PHOTOGRAMMETRY_CONFIG_ID
-        value: "NONE"
-      # S3 / rclone upload parameters
-      - name: S3_BUCKET_PHOTOGRAMMETRY_OUTPUTS
-        value: ""
-      # Post-processing parameters
-      - name: S3_BUCKET_POSTPROCESSED_OUTPUTS
-        value: "ofo-public"
-      - name: OUTPUT_DIRECTORY
-        value: ""
-      - name: BOUNDARY_DIRECTORY
-        value: ""
-      - name: WORKING_DIR
-        value: "/tmp/processing"
-      # - name: OUTPUT_MAX_DIM
-      #   value: "800"
-      # Docker image tag for postprocessing container
-      - name: POSTPROCESSING_IMAGE_TAG
-        value: "latest"
 
   # Defining where to read raw drone imagery data and write out imagery products to `/ofo-share`
   volumes:
@@ -58,40 +39,23 @@ spec:
 
   templates:
     # the 'main' template defines the order of high-level steps to be completed in the workflow.
-    # the 'process-datasets' step has a looping directive (withParam) which goes through each dataset name and processes it.
+    # the 'automate-metashape' step has a looping directive (withParam) which goes through each
+    # dataset name and processes it.
     - name: main
       steps:
-        - - name: compute-photogrammetry-config-subfolder
-            template: compute-photogrammetry-config-subfolder
-          - name: determine-datasets
+        - - name: determine-datasets
             template: determine-datasets
-        - - name: process-datasets
-            template: process-dataset-workflow
+        - - name: automate-metashape
+            template: automate-metashape-template
             arguments:
               parameters:
                 - name: dataset-name
                   value: "{{item.name}}"
                 - name: config-file
                   value: "{{item.config_file}}"
-                - name: photogrammetry-config-subfolder
-                  value: "{{steps.compute-photogrammetry-config-subfolder.outputs.result}}"
             withParam: "{{steps.determine-datasets.outputs.result}}"
 
     ## Here we define what the main steps actually do
-
-    # Compute the photogrammetry config subfolder name based on PHOTOGRAMMETRY_CONFIG_ID
-    # If PHOTOGRAMMETRY_CONFIG_ID is non-empty and not "NONE", returns "photogrammetry_<ID>", otherwise returns empty string
-    - name: compute-photogrammetry-config-subfolder
-      script:
-        image: python:3.9
-        command: ["python3"]
-        source: |
-          import sys
-          config_id = "{{workflow.parameters.PHOTOGRAMMETRY_CONFIG_ID}}"
-          if config_id and config_id != "NONE":
-              print(f"photogrammetry_{config_id}", end='')
-          else:
-              print("", end='')
 
     # Use containerized python to parse through the list of datasets as specified from runtime parameter 'CONFIG_LIST'
     # outputs a json of dataset names that is passed to the next steps
@@ -122,47 +86,6 @@ spec:
               # Output as JSON list
               json.dump(datasets, sys.stdout)
 
-    # High-level order of steps in the 'process-dataset-workflow' step. Each step will be defined later.
-    - name: process-dataset-workflow
-      inputs:
-        parameters:
-          - name: dataset-name
-          - name: config-file
-          - name: photogrammetry-config-subfolder
-      dag:
-        tasks:
-          - name: automate-metashape-task
-            template: automate-metashape-template
-            arguments:
-              parameters:
-                - name: dataset-name
-                  value: "{{inputs.parameters.dataset-name}}"
-                - name: config-file
-                  value: "{{inputs.parameters.config-file}}"
-
-          # As soon as processing finishes successfully, kick off upload on any available node
-          # Using 'depends' with .Succeeded ensures this only runs when automate-metashape-task succeeds.
-          - name: rclone-upload-task
-            depends: "automate-metashape-task.Succeeded"
-            template: rclone-upload-template
-            arguments:
-              parameters:
-                - name: dataset-name
-                  value: "{{inputs.parameters.dataset-name}}"
-                - name: photogrammetry-config-subfolder
-                  value: "{{inputs.parameters.photogrammetry-config-subfolder}}"
-
-          - name: postprocessing-task
-            depends: "rclone-upload-task.Succeeded"
-            template: postprocessing-template
-            arguments:
-              parameters:
-                - name: dataset-name
-                  value: "{{inputs.parameters.dataset-name}}"
-                - name: photogrammetry-config-subfolder
-                  value: "{{inputs.parameters.photogrammetry-config-subfolder}}"
-
-    ## Here we define what each step does in 'process-dataset-workflow' step
 
     # Defining how to process each dataset name
     - name: automate-metashape-template
@@ -210,149 +133,3 @@ spec:
               secretKeyRef:
                 name: agisoft-license
                 key: license_server
-
-    # --------- RCLONE UPLOAD (Docker image) ---------
-    - name: rclone-upload-template
-      inputs:
-        parameters:
-          - name: dataset-name
-          - name: photogrammetry-config-subfolder
-      container:
-        image: rclone/rclone:latest
-        volumeMounts:
-          - name: data
-            mountPath: /data
-        command: ["/bin/sh", "-lc"]
-        args:
-          - |
-            set -euo pipefail
-            SRC="/data/argo-output/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-name}}/output/"
-            SRC_parent="/data/argo-output/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-name}}"
-
-            # Build S3 destination path with optional photogrammetry config subfolder
-            if [ -n "{{inputs.parameters.photogrammetry-config-subfolder}}" ]; then
-              DST="s3:{{workflow.parameters.S3_BUCKET_PHOTOGRAMMETRY_OUTPUTS}}/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.photogrammetry-config-subfolder}}"
-            else
-              DST="s3:{{workflow.parameters.S3_BUCKET_PHOTOGRAMMETRY_OUTPUTS}}/{{workflow.parameters.RUN_FOLDER}}"
-            fi
-
-            echo "[rclone] Uploading $SRC -> $DST"
-
-            # Note that the rclone S3 credentials are provided via environment variables set in the
-            # workflow spec below. This is an  alternative to using a rclone config file or passing
-            # command-line flags to rclone.
-            rclone copy "$SRC" "$DST" \
-              --transfers 8 --checkers 8 --retries 5 --retries-sleep=15s \
-              --s3-upload-cutoff 200Mi --s3-chunk-size 100Mi --s3-upload-concurrency 4 \
-              --stats 15s --stats-log-level NOTICE
-
-            # Check if upload was successful
-            if [ $? -eq 0 ]; then
-              echo "[rclone] Upload successful for {{inputs.parameters.dataset-name}}"
-
-              # Clean up local files after successful upload
-              echo "[cleanup] Removing local files after successful upload..."
-              if [ -d "$SRC_parent" ]; then
-                rm -rf "$SRC_parent"
-                echo "[cleanup] Successfully removed: $SRC_parent"
-              else
-                echo "[cleanup] Source directory not found: $SRC_parent"
-              fi
-            else
-              echo "[rclone] Upload failed for {{inputs.parameters.dataset-name}}"
-              echo "[cleanup] Keeping local files due to upload failure"
-              exit 1
-            fi
-
-            echo "[rclone] Upload and cleanup completed for {{inputs.parameters.dataset-name}}"
-
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "256Mi"
-          limits:
-            memory: "1Gi"
-        env:
-          # Env vars to tell rclone how to connect to S3
-          - name: RCLONE_CONFIG_S3_TYPE
-            value: "s3"
-          - name: RCLONE_CONFIG_S3_PROVIDER
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: provider
-          - name: RCLONE_CONFIG_S3_ENDPOINT
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: endpoint
-          - name: RCLONE_CONFIG_S3_ACCESS_KEY_ID
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: access_key
-          - name: RCLONE_CONFIG_S3_SECRET_ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: secret_key
-
-    #--------- POST-PROCESSING (Python Docker image) ---------
-    - name: postprocessing-template
-      inputs:
-        parameters:
-          - name: dataset-name
-          - name: photogrammetry-config-subfolder
-      container:
-        image: ghcr.io/open-forest-observatory/photogrammetry-postprocessing:{{workflow.parameters.POSTPROCESSING_IMAGE_TAG}}
-        volumeMounts:
-          - name: data
-            mountPath: /data
-        env:
-          - name: S3_PROVIDER
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: provider
-          - name: S3_ENDPOINT
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: endpoint
-          - name: S3_ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: access_key
-          - name: S3_SECRET_KEY
-            valueFrom:
-              secretKeyRef:
-                name: s3-credentials
-                key: secret_key
-          - name: S3_BUCKET_INPUT_DATA
-            value: "{{workflow.parameters.S3_BUCKET_PHOTOGRAMMETRY_OUTPUTS}}"
-          - name: RUN_FOLDER
-            value: "{{workflow.parameters.RUN_FOLDER}}"
-          - name: PHOTOGRAMMETRY_CONFIG_SUBFOLDER
-            value: "{{inputs.parameters.photogrammetry-config-subfolder}}"
-          - name: DATASET_NAME
-            value: "{{inputs.parameters.dataset-name}}"
-          - name: S3_BUCKET_INPUT_BOUNDARY
-            value: "{{workflow.parameters.S3_BUCKET_POSTPROCESSED_OUTPUTS}}"
-          - name: INPUT_BOUNDARY_DIRECTORY
-            value: "{{workflow.parameters.BOUNDARY_DIRECTORY}}"
-          - name: S3_BUCKET_OUTPUT
-            value: "{{workflow.parameters.S3_BUCKET_POSTPROCESSED_OUTPUTS}}"
-          - name: OUTPUT_DIRECTORY
-            value: "{{workflow.parameters.OUTPUT_DIRECTORY}}"
-          #- name: OUTPUT_MAX_DIM
-            #value: "{{workflow.parameters.OUTPUT_MAX_DIM}}"
-          - name: WORKING_DIR
-            value: "{{workflow.parameters.WORKING_DIR}}"
-        resources:
-          requests:
-            cpu: "1"
-            memory: "4Gi"
-          limits:
-            cpu: "4"
-            memory: "16Gi"
