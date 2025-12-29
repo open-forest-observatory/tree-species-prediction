@@ -32,9 +32,6 @@ BACKGROUND_VALUE = (
 # Other parameters
 BBOX_PADDING_RATIO = 0.02
 IMAGE_RES_CONSTRAINT = 250  # min edge length (height or width) to save
-LABELLED_ONLY = (
-    True  # if using on all images (labelled and not labelled) -> set to False
-)
 # The number of processes to use for chipping.
 N_PROCESSES = 8
 
@@ -243,7 +240,6 @@ def chip_images(dset_name: str) -> tuple:
 
         mask_ids = imread(mask_file_path)  # load tif tree id mask
         mask_ids = np.squeeze(mask_ids)  # (H, W, 1) -> (H, W)
-        unique_mask_values = np.unique(mask_ids)  # get unique mask ids
 
         if mask_ids.dtype == np.uint32:
             # Indicates a mallformed image in the current experiments
@@ -254,14 +250,6 @@ def chip_images(dset_name: str) -> tuple:
         with open(IDs_to_labels_path, "r") as f:
             IDs_to_labels = json.load(f)
         ID_mapping = {int(k): int(v) for k, v in IDs_to_labels.items()}
-
-        if LABELLED_ONLY:
-            # filter mask values to only those that map to labelled IDs
-            unique_mask_values = [
-                uid
-                for uid in unique_mask_values
-                if ID_mapping.get(int(uid)) in labelled_tree_ids
-            ]
 
         individual_shapes = list(shapes(mask_ids, mask=mask_ids != 0))
 
@@ -437,7 +425,6 @@ def chip_images(dset_name: str) -> tuple:
         columns = [
             "image_id",
             "image_path",
-            "mask_value",
             "tree_unique_id",
             "species_original",
             "species_l1",
