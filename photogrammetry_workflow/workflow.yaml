@@ -1,0 +1,135 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: automate-metashape-workflow-
+spec:
+  serviceAccountName: argo
+  entrypoint: main
+
+  # Set imagePullPolicy for all containers in the workflow
+  podSpecPatch: |
+    containers:
+      - name: main
+        imagePullPolicy: Always
+
+  # Ensure that by default, workflow pods are scheduled on non-GPU nodes. GPU tasks will explicitly
+  # override this with their own affinity configuration.
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.present
+                operator: DoesNotExist
+
+  # A list of input parameters available to the workflow at runtime.
+  # These parameters can be referenced throughout the workflow templates using {{workflow.parameters.<name>}}
+  arguments:
+    parameters:
+      - name: CONFIG_LIST
+        value: "argo-input/config-lists/config_list.txt"
+      - name: RUN_FOLDER
+        value: "default-run"
+
+  # Defining where to read raw drone imagery data and write out imagery products to `/ofo-share`
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: ceph-share-rw-pvc2
+
+  templates:
+    # the 'main' template defines the order of high-level steps to be completed in the workflow.
+    # the 'automate-metashape' step has a looping directive (withParam) which goes through each
+    # dataset name and processes it.
+    - name: main
+      steps:
+        - - name: determine-datasets
+            template: determine-datasets
+        - - name: automate-metashape
+            template: automate-metashape-template
+            arguments:
+              parameters:
+                - name: dataset-name
+                  value: "{{item.name}}"
+                - name: config-file
+                  value: "{{item.config_file}}"
+            withParam: "{{steps.determine-datasets.outputs.result}}"
+
+    ## Here we define what the main steps actually do
+
+    # Use containerized python to parse through the list of datasets as specified from runtime parameter 'CONFIG_LIST'
+    # outputs a json of dataset names that is passed to the next steps
+    - name: determine-datasets
+      script:
+        image: python:3.9
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        command: ["python3"]
+        source: |
+          import json, sys, os
+          with open("/data/{{workflow.parameters.CONFIG_LIST}}", "r") as f:
+              datasets = []
+              for line in f:
+                  config_path = line.strip()
+                  if config_path:
+                      # Extract dataset name from the config file path
+                      # Remove extension and get basename for the dataset name
+                      base_with_ext = os.path.basename(config_path)
+                      dataset_name = os.path.splitext(base_with_ext)[0]
+
+                      datasets.append({
+                          "name": dataset_name,
+                          "config_file": config_path
+                      })
+
+              # Output as JSON list
+              json.dump(datasets, sys.stdout)
+
+
+    # Defining how to process each dataset name
+    - name: automate-metashape-template
+      inputs:
+        parameters:
+          - name: dataset-name
+          - name: config-file
+      # Disable workflow-level non-GPU affinity; let GPU resource request handle node selection
+      affinity: {}
+      # Use docker automate-metashape to do photogrammetry
+      script:
+        image: ghcr.io/open-forest-observatory/automate-metashape:dy-error-exit-code
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        command: ["/bin/sh"]
+        source: |
+          set -e
+
+          # Clean up any leftover products from a previous incomplete run
+          # This prevents data mismatches or incomplete projects that could cause Metashape to error
+          DATASET_DIR="/data/argo-output/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-name}}"
+          if [ -d "$DATASET_DIR" ]; then
+            echo "[cleanup] Removing leftover data from previous run: $DATASET_DIR"
+            rm -rf "$DATASET_DIR"
+            echo "[cleanup] Successfully removed: $DATASET_DIR"
+          else
+            echo "[cleanup] No previous data found at: $DATASET_DIR"
+          fi
+
+          # Run the Metashape workflow
+          python3 /app/python/metashape_workflow.py \
+            --config_file "/data/{{inputs.parameters.config-file}}" \
+            --project-path "/data/argo-output/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-name}}/project" \
+            --output-path "/data/argo-output/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-name}}/output" \
+            --run-name "{{inputs.parameters.dataset-name}}"
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+        env:
+          - name: AGISOFT_FLS
+            valueFrom:
+              secretKeyRef:
+                name: agisoft-license
+                key: license_server

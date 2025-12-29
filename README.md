@@ -2,29 +2,44 @@
 The goal of this project is to generate tree species predictions for hundreds of drone collected datasets in the Open Forest Observatory [catalog](https://openforestobservatory.org/data/drone/).
 
 # Install
-These processing steps rely on functionality from several projects. Because they have incompatible dependencies, you will need to create multiple separate conda environments for various steps. You will largely follow the instructions provided in the README file of each repository. However, if you want to ensure that the code you are using from these projects exactly matches what was used to conduct these experiments, conduct the following steps. First, clone the project locally from github. Then, from within the project, run `git checkout <tag name>` where the `<tag name>` refers to a named version of the code listed in each of the following sections. Also, there is a suggested name for the conda environment for each tool in the following sections.
+These processing steps rely on functionality from several projects. Because they have incompatible dependencies, you will need to create multiple separate conda environments for various steps. You will largely follow the instructions provided in the README file of each repository. However, if you want to ensure that the code you are using from these projects exactly matches what was used to conduct these experiments, conduct the following steps. First, clone the project locally from github. Then, from within the project, run `git checkout <tag>` where the `<tag>` refers to a versioned tag or commit of the code that is known to be compatible. Also, there is a suggested name for the conda environment for each tool in the following sections. Finally, follow the installation instructions listed in the project.
 
 ## [Automate Metashape](https://github.com/open-forest-observatory/automate-metashape)
-This project is a wrapper around Agisoft Metashape that allows for reproducible end-to-end automated photogrammetry. The tag is `vx.x.x` and the conda environment should be called `meta`.
+This project is a wrapper around Agisoft Metashape that allows for reproducible end-to-end automated photogrammetry. The tag is `v0.4.0` and the conda environment should be called `meta`.
+
+## [Geograypher](https://github.com/open-forest-observatory/geograypher)
+This project supports indentifying the location in an image of a geospatial point and vice versa. This project requires a diverse set of dependencies, so its environment can also be used to run multiple other steps. The tag is `a9f4d27` and the environment should be called `geograypher`.
+
+## [Tree Detection Framework](https://github.com/open-forest-observatory/tree-detection-framework)
+This project supports multiple approaches to detecting trees in geospatial data. The tag is `35c8020` and the environment should be called `TDF`.
+
+## CHM environment
+This environment is a little different in that it doesn't require an OFO project to be installed, but rather a collection of commonly used libraries. First create an environment with `conda create -n CHM python=3.10` then use pip to install the dependencies with `pip install rioxarray rasterio geopandas`.
+
+## Argo
+The photogrammetry step is especially computationally intensive so we use a workflow management tool called [Argo](https://argoproj.github.io/workflows/) to run it on multiple nodes on a Kubernetes cluster. The photogrammetry workflow is defined in the `photogrammetry_workflow/workflow.yaml` file. This specifies how to run photogrammetry in a containerized manner on your cluster.
+
+If you are running on your own system, you must install and configure Argo following the instructions [here](https://argo-workflows.readthedocs.io/en/latest/installation/). Once Argo has been set up, you must create a data storage "persistent volume" (PV) and "persistent volume claim" (PVC). This allows you to access the data for photogrammetry from within the containers running photogrametr This allows you to access the data for photogrammetry from within the containers running photogrametry. This PV should be configured to mount the folder specified in the `configs/path_config.py:paired_image_sets_for_photogrammetry` variable such that the `argo-input` folder is at the top level of the mount. And the PVC should be named `ceph-share-rw-pvc2` or the corresponding `claimName` field in the `workflow.yaml` file should be updated to the name of the PVC.
 
 # Setup
 Before any scripts can be ran, you must symlink the `_bootstrap.py` script into all working directories (i.e. folders with scripts that are ran directly, not called like other scripts such as those in `utils/` or `config/`). Fortunately the script `symlink_bootstrap.py` exists for that purpose. Simply run that script from the root directory of the project and it will take care of the rest. **This only needs to be ran once, unless symlinks break, or if new working directories are added.**
 
 **Note for Contributors:** There is a list in this script called `WORKING_DIRS` that contains the relative paths of folders described above. If you add a new folder for scripts to be ran directly, please ensure you also add the relative path of the folder to this list. Similarly if additional outside scripts are needed (e.g. Automate-Metashape) the paths to these script dirs can be added to `_bootstrap.py` in a list towards the bottom called `SCRIPTS_PATHS`.
 
-# Processing steps
-TODO, describe overview of processing steps
-
-## Photogrammetry
-The goal of photogrammetry is to reconstruct the 3D geometry of the scene from individual images. All steps in this section should be run with the `meta` conda environment.
-- `1_produce_combined_photogrammetry.py`: Runs photogrammetry on a pair of missions, one nadir and the other oblique.
-
-## Ground reference data prep
-- `1_compute_CHM.py`: This computes a canopy height model from the digital terrain model (DTM) and digital surface model (DSM) produced by photogrammetry. It requires that [rioxarray](https://corteva.github.io/rioxarray/stable/installation.html) be installed.
-- `2_tree_detection.py`: This detects trees in the CHM representation. The [Tree Detection Framework](https://github.com/open-forest-observatory/tree-detection-framework) must be installed.
-- `3_match_field_drone.py`: Install [spatial-utils](https://github.com/open-forest-observatory/spatial-utils) with the exception of the `poetry install` step. Then run `conda install scikit-learn`. Finally, from within the `spatial-utils` repository, run `poetry install`.
-- `09_add_field_attributes_to_drone.py`: This can be run with the tree-detection-framework dependencies. It performs matching between the field trees and drone-detected trees to add attributes from the field trees to the drone crowns. It also performs plot level filtering to remove plots with imprecisely registered reference data, low detection recall, or a high hardwood fraction. And at the tree level it removes dead trees and trees shorter than 10m.
-- `13_tree_crops.py`: This can be run with the geograypher environment.
+# Data preparation
+- `01_determine_species_classes.py`: This creates multiple levels of class aggregation for model training. It can be run with the `geograypher` environment.
+- `02_get_mission_altitude_driver_script.py`: This computes the height of the image locations above the corresponding digital surface model to compute an altitide above ground at which the image was captured. This can be run in any environment with Python installed. This downloads data from the bucket on S3 so you must follow the instructions in [this document](https://docs.google.com/document/d/155AP0P3jkVa-yT53a-QLp7vBAfjRa78gdST1Dfb4fls/edit?usp=sharing) prior to running anything.
+- `03_merge_alt_columns.py`: This merges the computed flight altitude into the other metadata. It can be run with the `geograypher` enviornment.
+- `04_pair_drone_with_ground.py`: There are three important types of imput data collected in different locations: field reference surveys, drone imagery collected at a low altitude (80m) and oblique orientation and drone imagery collected at a high altitude (120m) and nadir orientation. The goal of this script is to find triples of one of each type of data that spatially overlap. Specifically, the both drone surveys should both fully cover the field plot. This should be run with the `geograypher` environment.
+- `05_crop_raw_images_to_intersection.py`: Once the field plots and drone surveys have been assigned into triples, the images which are near the field plot can be identified. This step requires metadata which is stored in the cloud and will be downloaded automatically. So make sure to follow the instructions in [this document](https://docs.google.com/document/d/155AP0P3jkVa-yT53a-QLp7vBAfjRa78gdST1Dfb4fls/edit?usp=sharing) prior to running anything. This script can be run with the `geograypher` environment.
+- `06_produce_combined_photogrammetry.py`: The images, both oblique and nadir, must be registered together using photogrammetry to complete the downstream tasks. This script creates config files which specify how to run photogrammetry, and can be run in the `meta` environment. Once these config files have been generated, they can be used by `Argo` to actually perform photogrammetry.
+- `07_compute_CHM.py`: The canopy height model (CHM) represnts the difference between the heighest point identified in the scene and the estimated ground surface. Both of these are computed by photogrammetry. This script should be run with the `CHM` environment.
+- `08_tree_detection.py`: This script first detects tree tops using a variable window local maximum filter. Then, it uses marker-guided watershed segmentation to delineate a polygon around each tree top. The tree tops and polygons are saved separately, but individual trees are linked in that the `treetop_unique_ID` attribute of the tree crown matches the `unique_ID` attribute of the tree top. This can be run with the `TDF` environment.
+- `09_add_field_attributes_to_drone.py`:  It performs matching between the field trees and drone-detected trees to add attributes from the field trees to the drone crowns. It also performs plot level filtering to remove plots with imprecisely registered reference data, low detection recall, or a high hardwood fraction. And at the tree level it removes dead trees and trees shorter than 10m. This can be run with the `TDF` environment.
+- `10_render_instance_ids.py`: The ML model is trained on raw images. This step renders the geospatial information from the drone-detected crowns to the perspective of each image that views the crown. This can be run with the `geograypher` environment.
+- `11_crop_trees.py`: This creates a folder of image chips for each tree, with the background content optionally masked out. This can be run with the `geograypher` dependencies.
+- `12_create_train_val_split.py`: This first withholds the plots that have been designated manually as the stratified test set. Then, for the remaining plots, it determines train-val split at the plot level that approximately balances the species proportion between the two. This can be run with the `geograypher` environment.
+- `13_prepare_mmpretrain_dataset.py`: This formats the data so it is split by train/val and by class so it can be used by the MMPretrain library. This can be run with the `geograypher` environment.
 
 ## Training
 ### Work in Progress
