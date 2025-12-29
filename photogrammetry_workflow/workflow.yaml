@@ -1,0 +1,253 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: automate-metashape-workflow-
+spec:
+  serviceAccountName: argo
+  entrypoint: main
+
+  # A list of input parameters available to the workflow at runtime. 
+  # These parameters can be referenced throughout the workflow templates using {{workflow.parameters.<name>}}.
+  arguments:
+    parameters:
+      - name: CONFIG_FILE
+        default: "config.yml"
+      - name: RUN_FOLDER
+        default: "default-run"
+      - name: DATASET_LIST
+        default: "datasets.txt"
+      - name: AGISOFT_FLS
+        default: ""
+      - name: DB_HOST
+        default: ""
+      - name: DB_NAME
+        default: ""
+      - name: DB_USER
+        default: ""
+      - name: DB_PASSWORD
+        default: ""
+
+  # Defining where to read raw drone imagery data and write out imagery products to `/ofo-share`
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: ofo-share-nfs-pvc
+  - name: results
+    persistentVolumeClaim:
+      claimName: argo-output-nfs-pvc
+
+  templates:
+    # the 'main' template defines the order of high-level steps to be completed in the workflow. 
+    # the 'process-datasets' step has a looping directive (withParam) which goes through each dataset name and processes it. 
+    - name: main
+      steps:
+        - - name: determine-datasets
+            template: determine-datasets
+        - - name: log-datasets-to-db
+            template: log-datasets-to-db
+            arguments:
+              parameters:
+                - name: datasets
+                  value: "{{steps.determine-datasets.outputs.result}}"
+        - - name: process-datasets
+            template: process-dataset-workflow
+            arguments:
+              parameters:
+                - name: dataset-name
+                  value: "{{item}}"
+            withParam: "{{steps.determine-datasets.outputs.result}}"
+
+    ## here we define what the main steps actually do 
+    
+    # Use containerized python to parse through the list of datasets as specified from runtime parameter 'DATASET_LIST'
+    # outputs a json of dataset names that is passed to the next steps
+    - name: determine-datasets
+      script:
+        image: python:3.9
+        volumeMounts:
+        - name: data
+          mountPath: /input
+          subPath: "argo-input/{{workflow.parameters.DATASET_LIST}}"
+        command: ["python3"]
+        source: |
+          import json
+          import sys
+          file_path = "/input"
+          with open(file_path, "r") as f:
+            json.dump([line.strip() for line in f], sys.stdout)
+
+    # launches a docker container which contains our custom py script to log the dataset names into a postgis database
+    # takes the json list of dataset names (from the 'determine datasets' step)
+    - name: log-datasets-to-db
+      inputs:
+        parameters:
+          - name: datasets
+      container:
+        image: ghcr.io/open-forest-observatory/ofo-argo-utils:latest
+        command: ["python", "/app/db_logger.py"]
+        args:
+          - "log-initial"
+          - "--workflow-id"
+          - "{{workflow.name}}"
+          - "--datasets-json"
+          - "{{inputs.parameters.datasets}}"
+        env:
+          - name: DB_HOST
+            value: "{{workflow.parameters.DB_HOST}}"
+          - name: DB_NAME
+            value: "{{workflow.parameters.DB_NAME}}"
+          - name: DB_USER
+            value: "{{workflow.parameters.DB_USER}}"
+          - name: DB_PASSWORD
+            value: "{{workflow.parameters.DB_PASSWORD}}"
+    
+    # High-level order of steps in the workflow. Each step will be defined later.      
+    - name: process-dataset-workflow
+      inputs:
+        parameters:
+          - name: dataset-name  
+      steps:
+        - - name: log-start
+            template: log-dataset-start
+            arguments:
+              parameters:
+                - name: dataset-name
+                  value: "{{inputs.parameters.dataset-name}}"
+        - - name: run-processing
+            template: run-automate-metashape
+            arguments:
+              parameters:
+                - name: dataset-names
+                  value: "{{inputs.parameters.dataset-name}}" # Pass dataset name to Metashape container
+                - name: config-file
+                  value: "{{workflow.parameters.CONFIG_FILE}}" # Pass the global config file to control processing options
+            continueOn:
+              failed: true  # EVEN IF this step fails, keep the workflow running (needed to log failure in DB later)
+        - - name: determine-success
+            template: evaluate-success
+            arguments:
+              parameters:
+                - name: step-status
+                  value: "{{steps.run-processing.status}}"
+        - - name: log-completion
+            template: log-dataset-completion
+            arguments:
+              parameters:
+                - name: dataset-name
+                  value: "{{inputs.parameters.dataset-name}}"
+                - name: success
+                  value: "{{steps.determine-success.outputs.result}}"      
+
+    ## Here we define what each step does
+    
+    # use our custom containerized db_logger.py to log 'processing' in the postgis DB
+    - name: log-dataset-start
+      inputs:
+        parameters:
+          - name: dataset-name
+      container:
+        image: ghcr.io/open-forest-observatory/ofo-argo-utils:latest
+        command: ["python", "/app/db_logger.py"]
+        args:
+          - "log-start"
+          - "--workflow-id"
+          - "{{workflow.name}}"
+          - "--dataset"
+          - "{{inputs.parameters.dataset-name}}"
+        env:
+          - name: DB_HOST
+            value: "{{workflow.parameters.DB_HOST}}"
+          - name: DB_NAME
+            value: "{{workflow.parameters.DB_NAME}}"
+          - name: DB_USER
+            value: "{{workflow.parameters.DB_USER}}"
+          - name: DB_PASSWORD
+            value: "{{workflow.parameters.DB_PASSWORD}}"
+    
+    # use our custom containerized db_logger.py to log 'completed' or 'failed' in the postgis DB
+    - name: log-dataset-completion
+      inputs:
+        parameters:
+          - name: dataset-name
+          - name: success
+      container:
+        image: ghcr.io/open-forest-observatory/ofo-argo-utils:latest
+        command: ["python", "/app/db_logger.py"]
+        args:
+          - "log-completion"
+          - "--workflow-id"
+          - "{{workflow.name}}"
+          - "--dataset"
+          - "{{inputs.parameters.dataset-name}}"
+          - "--success"
+          - "{{inputs.parameters.success}}"
+        env:
+          - name: DB_HOST
+            value: "{{workflow.parameters.DB_HOST}}"
+          - name: DB_NAME
+            value: "{{workflow.parameters.DB_NAME}}"
+          - name: DB_USER
+            value: "{{workflow.parameters.DB_USER}}"
+          - name: DB_PASSWORD
+            value: "{{workflow.parameters.DB_PASSWORD}}"
+    
+    # Script to determine success of failure of step
+    - name: evaluate-success
+      inputs:
+        parameters:
+          - name: step-status
+      script:
+        image: python:3.9
+        command: ["python3"]
+        source: |
+          import sys
+          status = "{{inputs.parameters.step-status}}"
+          sys.stdout.write("true" if status == "Succeeded" else "false")
+
+    # Defining how to process each dataset name      
+    - name: run-automate-metashape
+      inputs:
+        parameters:
+          - name: dataset-names
+          - name: config-file
+      # the following 'metadata' and 'affinity' language is about ensuring one metashape project on one VM
+      metadata:
+        labels:
+          workload-type: metashape-job  # arbitrary, but used for pod spreading
+      
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: workload-type
+                    operator: In
+                    values:
+                      - metashape-job
+              topologyKey: "kubernetes.io/hostname"
+
+      # Use docker automate-metashape to do photogrammetry
+      container:
+        image: ghcr.io/open-forest-observatory/automate-metashape
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: results
+          mountPath: /results
+        command: ["python3", "/app/python/metashape_workflow.py"]
+        args: 
+          - "--config_file"
+          - "/data/argo-input/{{inputs.parameters.config-file}}"
+          - "--photo-path"
+          - "/data/argo-input/{{inputs.parameters.dataset-names}}"
+          - "--project-path"
+          - "/results/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-names}}/project"
+          - "--output-path"
+          - "/results/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-names}}/output"
+          - "--run-name"
+          - "{{inputs.parameters.dataset-names}}"
+        env:
+          - name: AGISOFT_FLS
+            value: "{{workflow.parameters.AGISOFT_FLS}}"
+
+         
