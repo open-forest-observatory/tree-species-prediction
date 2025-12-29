@@ -110,7 +110,7 @@ def create_mmpretrain_structure(
 
     overlap_train_val = train_set & val_set
     if overlap_train_val:
-        print(f"WARNING: Overlapping datasets in train and val: {overlap_train_val}")
+        raise ValueError(f"Overlapping datasets in train and val: {overlap_train_val}")
 
     missing_train = train_set - all_datasets
     missing_val = val_set - all_datasets
