@@ -1,14 +1,20 @@
 import json
 import os
 import uuid
+from math import ceil, floor
+from multiprocessing import Pool
 from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import tifffile as tif
+import shapely
+from imageio import imread, imwrite
 from PIL import Image
-from scipy.ndimage import binary_dilation, label
+from rasterio import features
+from rasterio.features import shapes
+from scipy.ndimage import label
+from shapely.affinity import translate
 from tqdm import tqdm
 
 import _bootstrap
@@ -26,9 +32,8 @@ BACKGROUND_VALUE = (
 # Other parameters
 BBOX_PADDING_RATIO = 0.02
 IMAGE_RES_CONSTRAINT = 250  # min edge length (height or width) to save
-LABELLED_ONLY = (
-    True  # if using on all images (labelled and not labelled) -> set to False
-)
+# The number of processes to use for chipping.
+N_PROCESSES = 8
 
 # Path configurations
 tree_label_mask_paths = path_config.rendered_instance_ids
@@ -36,6 +41,9 @@ raw_imgs_path = path_config.paired_image_sets_for_photogrammetry
 ground_data_path = path_config.drone_crowns_with_field_attributes
 output_path = path_config.cropped_tree_training_images
 species_crosswalk_path = path_config.species_class_crosswalk_file
+
+# Specify datasets to process (set to None to process all datasets)
+DATASETS_TO_PROCESS = None
 
 
 def load_all_species_mappings(crosswalk_path):
@@ -132,76 +140,40 @@ def filter_contours_by_area(binary_mask, area_threshold=0.5):
     return filtered_mask
 
 
-def create_masked_image(img_array, tree_mask, buffer_pixels, background_value):
-    """
-    Create a masked version of the image where background is set to a neutral value.
+def chip_images(dset_name: str) -> tuple:
+    """Create the per-tree chips for one dataset
 
     Args:
-        img_array (np.ndarray): Original image as numpy array (H, W, C)
-        tree_mask (np.ndarray): Binary mask for the tree (H, W), True for tree pixels
-        buffer_pixels (int): Number of pixels to dilate the mask (buffer zone)
-        background_value (tuple): Values for 3 channels to set background pixels (0-255)
+        dset_name (str): The dataset name in the <plot_id>_<hn>_<lo> format
 
     Returns:
-        np.ndarray: Masked image array
+        bool: Whether the run completed successfully without skipping
+        dict: Performance counters, specifying how many images were processed and how many were skipped
     """
-    # Create dilated mask (adds buffer around the tree)
-    if buffer_pixels > 0:
-        dilated_mask = binary_dilation(tree_mask, iterations=buffer_pixels)
-    else:
-        dilated_mask = tree_mask
+    # Initialize the performance counters
+    mapping_stats = {
+        "total_processed": 0,
+        "saved_crops": 0,
+        "with_species_label": 0,
+        "without_species_label": 0,
+        "missing_img_cts": 0,
+    }
 
-    # Create output image
-    masked_img = img_array.copy()
+    # Load the per-tree metadata, including species information
+    dset_gt_mapping = gpd.read_file(Path(ground_data_path, dset_name + ".gpkg"))
 
-    # Set background pixels to background_value
-    masked_img[~dilated_mask] = background_value
-
-    return masked_img
-
-
-# Load all species mappings
-all_species_mappings = load_all_species_mappings(species_crosswalk_path)
-
-
-# Specify datasets to process (set to None to process all datasets)
-DATASETS_TO_PROCESS = None
-
-if DATASETS_TO_PROCESS is None:
-    dset_names = sorted(os.listdir(tree_label_mask_paths))
-    print(f"Processing all {len(dset_names)} datasets")
-else:
-    all_dset_names = sorted(os.listdir(tree_label_mask_paths))
-    dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
-    print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
-
-dset_gt_mapping = {
-    dset_name: gpd.read_file(Path(ground_data_path, dset_name + ".gpkg"))
-    for dset_name in dset_names
-}
-
-# Process each dataset individually
-missing_img_ctr = 0
-skipped_datasets = []
-mapping_stats = {
-    "total_processed": 0,
-    "saved_crops": 0,
-    "with_species_label": 0,
-    "without_species_label": 0,
-}
-
-for dset_name in dset_names:
     # metadata records for this specific dataset
     records = []
 
-    dset_idx, nadir_id, oblique_id = dset_name.split("_")
+    # Extract the mission IDs
+    _, nadir_id, oblique_id = dset_name.split("_")
 
     # If metadata file for this dataset already exists, skip processing it again
     labelled_output_dir = Path(output_path, "labelled", dset_name)
     metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
     if metadata_fp.exists():
         print(f"Skipping dataset {dset_name}: has already been processed")
-        continue
+        return False, mapping_stats
 
     # get tif mask files from all the subdirs
     nadir_base_path = Path(tree_label_mask_paths, dset_name, "nadir", nadir_id)
@@ -210,8 +182,7 @@ for dset_name in dset_names:
     # Check if both folders exist
     if not nadir_base_path.exists() or not oblique_base_path.exists():
         print(f"Skipping dataset {dset_name}: missing folder(s)")
-        skipped_datasets.append(dset_name)
-        continue
+        return False, mapping_stats
 
     # assemble list of tuples for this dataset's data paths
     # each item in the list will be (src_info, mask_fp, img_path)
@@ -241,20 +212,20 @@ for dset_name in dset_names:
                     print(
                         f"WARNING: mask file: {mask_fp} has no corresponding image file"
                     )
-                    missing_img_ctr += 1
+                    mapping_stats["missing_img_cts"] += 1
         except FileNotFoundError as fne:
             print(f"WARNING: Missing label directory {flight_dir}")
             continue
 
     if not data_paths:
         print(f"No data paths found for dataset {dset_name}")
-        continue
+        return False, mapping_stats
 
     pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
     pbar.set_description(f"Processing dataset: {dset_name}")
 
     for src_info, mask_file_path, img_file_path in pbar:
-        plot_attributes = dset_gt_mapping[src_info["dset_name"]][
+        plot_attributes = dset_gt_mapping[
             ["unique_ID", "species_code"]
         ]  # id and species cols of ground ref geodataframe
         labelled_tree_ids = plot_attributes[
@@ -266,13 +237,14 @@ for dset_name in dset_names:
         img_array = (
             np.array(img) if MASK_BACKGROUND else None
         )  # Convert to numpy array for masking
-        img_cx, img_cy = img.width / 2, img.height / 2
-        safe_radius = min(
-            img_cx, img_cy
-        )  # how far a crop can be from the center to be acceptable distortion
-        mask_ids = tif.imread(mask_file_path)  # load tif tree id mask
+
+        mask_ids = imread(mask_file_path)  # load tif tree id mask
         mask_ids = np.squeeze(mask_ids)  # (H, W, 1) -> (H, W)
-        unique_mask_values = np.unique(mask_ids)  # get unique mask ids
+
+        if mask_ids.dtype == np.uint32:
+            # Indicates a mallformed image in the current experiments
+            mapping_stats["missing_img_cts"] += 1
+            continue
 
         # load the json file that maps the mask IDs to their unique_ID values and create a mapping dict
         IDs_to_labels_path = src_info["IDs_to_labels_path"]
@@ -280,27 +252,64 @@ for dset_name in dset_names:
             IDs_to_labels = json.load(f)
         ID_mapping = {int(k): int(v) for k, v in IDs_to_labels.items()}
 
-        if LABELLED_ONLY:
-            # filter mask values to only those that map to labelled IDs
-            unique_mask_values = [
-                uid
-                for uid in unique_mask_values
-                if ID_mapping.get(int(uid)) in labelled_tree_ids
-            ]
+        individual_shapes = list(shapes(mask_ids, mask=mask_ids != 0))
+
+        # No polygons, skip
+        if len(individual_shapes) == 0:
+            continue
+
+        # Extract the potentially-multiple polygons from each shape along with the original value,
+        # now encoded as a zero-padded string
+        polys = [
+            (shapely.Polygon(poly), int(shape[1]))
+            for shape in individual_shapes
+            for poly in shape[0]["coordinates"]
+        ]
+        # Split into geometries and IDs and build a geodataframe
+        geometry, ids = list(zip(*polys))
+        # Create a GDF using an arbitrary CRS
+        shapes_gdf = gpd.GeoDataFrame({"geometry": geometry, "IDs": ids}, crs=3310)
+
+        # Store the area as an attribute for future use
+        shapes_gdf["polygon_area"] = shapes_gdf.area
+        # Find the max area per ID
+        max_area_per_class = shapes_gdf.groupby("IDs").max()
+
+        # Merge the area and max area by IDs
+        shapes_gdf = shapes_gdf.join(max_area_per_class, on="IDs", rsuffix="_max")
+
+        # Compute for each polygon what fraction of the max area for that ID it is
+        shapes_gdf["frac_of_max"] = (
+            shapes_gdf["polygon_area"] / shapes_gdf["polygon_area_max"]
+        )
+        # Remove the polygons which are less than the threshold fraction of the max for that ID
+        shapes_gdf = shapes_gdf[shapes_gdf["frac_of_max"] > 0.5]
+        # Remove the columns we no longer need
+        shapes_gdf.drop(
+            ["frac_of_max", "polygon_area", "polygon_area_max"], axis=1, inplace=True
+        )
+
+        # Merge by ID, forming multipolygons as needed
+        shapes_gdf = shapes_gdf.dissolve("IDs", as_index=False)
+
+        # Compute the axis-aligned height and width of each ID
+        width = shapes_gdf.bounds.maxx - shapes_gdf.bounds.minx
+        height = shapes_gdf.bounds.maxy - shapes_gdf.bounds.miny
+
+        # Remove IDs that are too small
+        valid_dims = (height > IMAGE_RES_CONSTRAINT) & (width > IMAGE_RES_CONSTRAINT)
+        shapes_gdf = shapes_gdf[valid_dims]
+
+        # Remove any zero area polygons
+        shapes_gdf = shapes_gdf[shapes_gdf.area > 0]
+
+        # Convert IDs from the 1-indexed consequetive values used for geograypher rendering to the
+        # IDs used for the rows in the crown geodataframe
+        shapes_gdf.IDs = shapes_gdf.IDs.map(ID_mapping)
 
         # iterate over ids
-        for tree_mask_value in unique_mask_values:
-            if np.isnan(tree_mask_value):  # skip nan values
-                continue
-
-            # map mask value -> tree unique ID
-            tree_unique_id = ID_mapping.get(int(tree_mask_value))
-            if tree_unique_id is None:
-                raise ValueError(
-                    f"Tree unique_ID for mask value {tree_mask_value} is None. Check {IDs_to_labels_path}"
-                )
-
-            tree_unique_id = str(int(tree_unique_id)).zfill(
+        for _, row in shapes_gdf.iterrows():
+            tree_unique_id = str(int(row.IDs)).zfill(
                 5
             )  # convert tree uid to 0 padded str to match plot_attributes format
 
@@ -330,56 +339,52 @@ for dset_name in dset_names:
             # Determine directory structure based on whether species exists
             species_dir_label = "unlabelled" if original_species is None else "labelled"
 
-            # Create binary mask for current tree and filter contours
-            tree_binary_mask = mask_ids == tree_mask_value
-            filtered_mask = filter_contours_by_area(
-                tree_binary_mask, area_threshold=0.5
-            )
+            # Create the mask
+            minx, miny, maxx, maxy = row.geometry.bounds
+            width = maxx - minx
+            height = maxy - miny
 
-            ys, xs = np.where(filtered_mask)
+            pad_width = width * BBOX_PADDING_RATIO
+            pad_height = height * BBOX_PADDING_RATIO
 
-            if ys.size == 0 or xs.size == 0:
-                continue  # skip if no pixels found after filtering
+            # padded floating coords
+            left = minx - pad_width
+            top = miny - pad_height
+            right = maxx + pad_width
+            bottom = maxy + pad_height
 
-            y0, y1, x0, x1 = (
-                ys.min(),
-                ys.max(),
-                xs.min(),
-                xs.max(),
-            )  # current tree img bounds
+            # image shape (rows=height, cols=width)
+            img_h, img_w = img_array.shape[:2]
 
-            # check for 'bad' crops
-            # currently looks for low res images (h or w < 250 px),
-            # or crops near the edge of the images liable for distortion (any bbox edge <250px away from full img edge)
+            # integer pixel coordinates, clamped to image bounds
+            crop_minx = max(0, int(floor(left)))
+            crop_miny = max(0, int(floor(top)))
+            crop_maxx = min(img_w, int(ceil(right)))
+            crop_maxy = min(img_h, int(ceil(bottom)))
 
-            # low res img
-            # typically trees too far off in the distance
-            if y1 - y0 < IMAGE_RES_CONSTRAINT or x1 - x0 < IMAGE_RES_CONSTRAINT:
-                continue
+            # extract crop
+            crop = img_array[crop_miny:crop_maxy, crop_minx:crop_maxx].copy()
 
             # Apply background masking if enabled
             if MASK_BACKGROUND:
-                masked_img_array = create_masked_image(
-                    img_array, filtered_mask, MASK_BUFFER_PIXELS, BACKGROUND_VALUE
+                # shift geometry into crop-local coordinates (use integer crop offsets)
+                shifted_geometry = translate(
+                    row.geometry, xoff=-crop_minx, yoff=-crop_miny
                 )
 
-                # Convert back to PIL Image for cropping
-                img_to_crop = Image.fromarray(masked_img_array)
-            else:
-                img_to_crop = img
+                # Expand the mask
+                buffered_geometry = shifted_geometry.buffer(MASK_BUFFER_PIXELS)
 
-            # crop image to bbox plus padding
-            # cropping in PIL is left, top, right, bottom
-            bbox_pad_width, bbox_pad_height = (x1 - x0) * BBOX_PADDING_RATIO, (
-                y1 - y0
-            ) * BBOX_PADDING_RATIO
-            bbox = (
-                x0 - bbox_pad_width,
-                y0 - bbox_pad_height,
-                x1 + bbox_pad_width,
-                y1 + bbox_pad_height,
-            )
-            cropped_img = img_to_crop.crop(bbox)
+                # rasterize the shifted geometry to a mask (0 inside geometry, 1 outside)
+                mask = features.rasterize(
+                    [(buffered_geometry, 0)],
+                    out_shape=(crop.shape[0], crop.shape[1]),
+                    fill=1,
+                    dtype="uint8",
+                ).astype(bool)
+
+                bg = np.array(BACKGROUND_VALUE, dtype=crop.dtype)
+                crop[mask] = bg
 
             fp = Path(
                 output_path,  # base dir to the training data folder
@@ -396,15 +401,13 @@ for dset_name in dset_names:
                 :10
             ]  # take first 10 digits of a UUID-derived int
             crop_path = fp / f"{image_id}.png"
-
-            cropped_img.save(crop_path)  # save cropped img
+            imwrite(crop_path, crop)  # save cropped img
             mapping_stats["saved_crops"] += 1
 
             # Build metadata record with all species levels
             record = {
                 "image_id": image_id,
                 "image_path": str(crop_path.resolve()),
-                "mask_value": tree_mask_value,
                 "tree_unique_id": tree_unique_id,
                 "species_original": original_species,
                 "species_l1": mapped_species_all_levels["l1"],
@@ -423,7 +426,6 @@ for dset_name in dset_names:
         columns = [
             "image_id",
             "image_path",
-            "mask_value",
             "tree_unique_id",
             "species_original",
             "species_l1",
@@ -437,25 +439,60 @@ for dset_name in dset_names:
 
         meta_df = pd.DataFrame(records, columns=columns)
 
+        labelled_output_dir.mkdir(parents=True, exist_ok=True)
+
         metadata_fp = labelled_output_dir / f"{dset_name}_metadata.csv"
         meta_df.to_csv(metadata_fp, index=False)
         print(f"Metadata saved to {metadata_fp}")
     else:
         print(f"No records to save for dataset {dset_name}")
 
+    return True, mapping_stats
+
+
+# Load all species mappings
+all_species_mappings = load_all_species_mappings(species_crosswalk_path)
+
+if DATASETS_TO_PROCESS is None:
+    dset_names = sorted(os.listdir(tree_label_mask_paths))
+    print(f"Processing all {len(dset_names)} datasets")
+else:
+    all_dset_names = sorted(os.listdir(tree_label_mask_paths))
+    dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
+    print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
+
+
+# Execute chipping with multiprocessing. This is the slow step.
+with Pool(N_PROCESSES) as p:
+    # Get the list of returns
+    multiprocessing_result = p.map(chip_images, dset_names, chunksize=1)
+
+# Reformat the results of the run
+successes, results_dicts = zip(*multiprocessing_result)
+skipped_datasets = [
+    dset_name for dset_name, success in zip(dset_names, successes) if not success
+]
+
+missing_img_cts = sum([rd["missing_image_cts"] for rd in results_dicts])
+total_processed = sum([rd["total_processed"] for rd in results_dicts])
+with_species_label = sum([rd["with_species_label"] for rd in results_dicts])
+without_species_label = sum([rd["without_species_label"] for rd in results_dicts])
+saved_crops = sum([rd["saved_crops"] for rd in results_dicts])
+
+
 # Print final summary
 print(f"Processing complete!")
 print(
-    f"Found {missing_img_ctr} mask files without corresponding image files"
+    f"Found {missing_img_cts} mask files without corresponding image files"
 )  # should be 0
 if skipped_datasets:
     print(f"Skipped datasets due to missing folders: {skipped_datasets}")
 
 print(f"Summary:")
-print(f"Total trees processed: {mapping_stats['total_processed']}")
-print(f"Trees with species labels: {mapping_stats['with_species_label']}")
-print(f"Trees without species labels: {mapping_stats['without_species_label']}")
-print(f"Total crops saved: {mapping_stats['saved_crops']}")
+print(f"Total trees processed: {total_processed}")
+print(f"Trees with species labels: {with_species_label}")
+print(f"Trees without species labels: {without_species_label}")
+print(f"Total crops saved: {saved_crops}")
 
 # Print summary of available classes at each level
 for level in ["l1", "l2", "l3", "l4"]:
