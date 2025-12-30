@@ -243,6 +243,7 @@ def chip_images(dset_name: str) -> tuple:
 
         if mask_ids.dtype == np.uint32:
             # Indicates a mallformed image in the current experiments
+            mapping_stats["missing_img_cts"] += 1
             continue
 
         # load the json file that maps the mask IDs to their unique_ID values and create a mapping dict
