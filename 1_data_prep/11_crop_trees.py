@@ -33,7 +33,7 @@ BACKGROUND_VALUE = (
 BBOX_PADDING_RATIO = 0.02
 IMAGE_RES_CONSTRAINT = 250  # min edge length (height or width) to save
 # The number of processes to use for chipping.
-N_PROCESSES = 8
+N_PROCESSES = 16
 
 # Path configurations
 tree_label_mask_paths = path_config.rendered_instance_ids
