@@ -250,7 +250,11 @@ def chip_images(dset_name: str) -> tuple:
         IDs_to_labels_path = src_info["IDs_to_labels_path"]
         with open(IDs_to_labels_path, "r") as f:
             IDs_to_labels = json.load(f)
-        ID_mapping = {int(k): int(v) for k, v in IDs_to_labels.items()}
+        # TODO remove the minus 1 once geograypher has been fixed
+        ID_mapping = {int(k) - 1: int(v) for k, v in IDs_to_labels.items()}
+        # There should not be any values of 0 rendered because of the mask in the next step
+        # but just to be sure, pop the zero mapping from the dict
+        ID_mapping.pop(0)
 
         individual_shapes = list(shapes(mask_ids, mask=mask_ids != 0))
 
@@ -303,7 +307,7 @@ def chip_images(dset_name: str) -> tuple:
         # Remove any zero area polygons
         shapes_gdf = shapes_gdf[shapes_gdf.area > 0]
 
-        # Convert IDs from the 1-indexed consequetive values used for geograypher rendering to the
+        # Convert IDs from the 0-indexed consequetive values used for geograypher rendering to the
         # IDs used for the rows in the crown geodataframe
         shapes_gdf.IDs = shapes_gdf.IDs.map(ID_mapping)
 
