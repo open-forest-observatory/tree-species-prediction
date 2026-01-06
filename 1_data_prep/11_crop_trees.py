@@ -224,6 +224,16 @@ def chip_images(dset_name: str) -> tuple:
     pbar = tqdm(data_paths, unit="file", position=0, leave=True, dynamic_ncols=True)
     pbar.set_description(f"Processing dataset: {dset_name}")
 
+    # load the json file that maps the mask IDs to their unique_ID values and create a mapping dict
+    IDs_to_labels_path = src_info["IDs_to_labels_path"]
+    with open(IDs_to_labels_path, "r") as f:
+        IDs_to_labels = json.load(f)
+    # TODO remove the minus 1 once geograypher has been fixed
+    ID_mapping = {int(k) - 1: int(v) for k, v in IDs_to_labels.items()}
+    # There should not be any values of 0 rendered because of the mask in the next step
+    # but just to be sure, pop the zero mapping from the dict
+    ID_mapping.pop(0)
+
     for src_info, mask_file_path, img_file_path in pbar:
         plot_attributes = dset_gt_mapping[
             ["unique_ID", "species_code"]
@@ -245,16 +255,6 @@ def chip_images(dset_name: str) -> tuple:
             # Indicates a mallformed image in the current experiments
             mapping_stats["missing_img_cts"] += 1
             continue
-
-        # load the json file that maps the mask IDs to their unique_ID values and create a mapping dict
-        IDs_to_labels_path = src_info["IDs_to_labels_path"]
-        with open(IDs_to_labels_path, "r") as f:
-            IDs_to_labels = json.load(f)
-        # TODO remove the minus 1 once geograypher has been fixed
-        ID_mapping = {int(k) - 1: int(v) for k, v in IDs_to_labels.items()}
-        # There should not be any values of 0 rendered because of the mask in the next step
-        # but just to be sure, pop the zero mapping from the dict
-        ID_mapping.pop(0)
 
         individual_shapes = list(shapes(mask_ids, mask=mask_ids != 0))
 
