@@ -1,5 +1,5 @@
-from pathlib import Path
 from multiprocessing import Pool
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
