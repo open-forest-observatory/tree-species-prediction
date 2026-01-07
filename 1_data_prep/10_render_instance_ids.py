@@ -2,6 +2,7 @@ from pathlib import Path
 from multiprocessing import Pool
 
 import geopandas as gpd
+import numpy as np
 
 # Geograypher imports
 from geograypher.entrypoints.render_labels import render_labels
@@ -37,45 +38,53 @@ ERROR_LOG_FILE = Path("error_log.txt")
 N_PROCESSES = 16
 
 
-def render_dataset(dataset):
+def render_dataset(dataset: str) -> bool:
+    """Render the tree crown IDs to each image that obseverse them
+
+    Args:
+        dataset (str): The dataset ID to render, in the <plot>_<low nadir>_<high oblique> format
+
+    Returns:
+        bool: Whether the dataset rendered without skipping or failure
+    """
     # INPUTS
     # The input labels
     labels_file = Path(
         path_config.drone_crowns_with_field_attributes, f"{dataset}.gpkg"
     )
+    # The paths to the photogrammetry producs
+    photogrammetry_outputs_folder = Path(
+        path_config.photogrammetry_folder,
+        dataset,
+        "output",
+    )
     # The mesh exported from Metashape
-    mesh_file = Path(
-        path_config.photogrammetry_folder, dataset, "output", f"{dataset}_mesh.ply"
-    )
-    cameras_file = Path(
-        path_config.photogrammetry_folder,
-        dataset,
-        "output",
-        f"{dataset}_cameras.xml",
-    )
+    mesh_file = Path(photogrammetry_outputs_folder, f"{dataset}_mesh.ply")
+    cameras_file = Path(photogrammetry_outputs_folder, f"{dataset}_cameras.xml")
     dtm_file = Path(
-        path_config.photogrammetry_folder,
-        dataset,
-        "output",
+        photogrammetry_outputs_folder,
         f"{dataset}_dtm-ptcloud.tif",
     )
-    # The image folder used to create the Metashape project
-    image_folder = Path(path_config.paired_image_sets_for_photogrammetry, dataset)
+
+    # The folder within the docker container used for photogrammetry. The paths in the camera file
+    # are with respect to this location.
     original_image_folder = Path(path_config.argo_imagery_path, dataset)
+    # The image folder used to create the Metashape project. This is where the imagery is now stored.
+    image_folder = Path(path_config.paired_image_sets_for_photogrammetry, dataset)
 
     # OUTPUTS
     # Where to save the renders
-    render_output_folder = path_config.rendered_instance_ids / dataset
+    render_output_folder = Path(path_config.rendered_instance_ids, dataset)
     # Where to save the visualizations
-    vis_output_folder = path_config.rendered_instance_ids_vis / dataset
+    vis_output_folder = Path(path_config.rendered_instance_ids_vis, dataset)
 
     if render_output_folder.exists():
         print(f"Skipping {dataset} - renders already exist at {render_output_folder}")
-        return
+        return False
 
     if not labels_file.exists():
         print(f"Skipping {dataset} - vector file not found at {labels_file}")
-        return
+        return False
 
     # Create the IDs to labels mapping
     labels = gpd.read_file(labels_file)
@@ -84,10 +93,7 @@ def render_dataset(dataset):
     ids_to_labels = {i + 1: label for i, label in enumerate(label_values)}
 
     try:
-        # Create an output directory with a single folder inside it to mark the render as in
-        # progress. This is useful if using multiple workers to parallelize the rendering.
-        render_output_folder.mkdir(parents=True, exist_ok=True)
-
+        # Actually perform the rendering
         render_labels(
             mesh_file=mesh_file,
             cameras_file=cameras_file,
@@ -123,6 +129,10 @@ def render_dataset(dataset):
         print(e)
         with open(ERROR_LOG_FILE, "a") as f:
             f.write(f"Dataset {dataset} failed with error: {e}\n")
+        return False
+
+    # Everthing completed ok
+    return True
 
 
 if __name__ == "__main__":
@@ -131,11 +141,21 @@ if __name__ == "__main__":
         path_config.photogrammetry_folder.symlink_to(
             path_config.photogrammetry_folder_argo
         )
+    # List all of the photogrammetry folders
     photogrammetry_folders = path_config.photogrammetry_folder.glob("*")
 
     # Compute the dataset names
     datasets = [pf.parts[-1] for pf in photogrammetry_folders]
 
+    # Run the computation as a multiprocessing pool
     with Pool(N_PROCESSES) as p:
         # Get the list of returns
-        multiprocessing_result = p.map(render_dataset, datasets, chunksize=1)
+        successes = p.map(render_dataset, datasets, chunksize=1)
+
+    # Compute which datasets failed, if any
+    failed_datasets = np.array(datasets)[np.logical_not(successes)].tolist()
+
+    if len(failed_datasets) > 0:
+        print("The following datasets failed or were skipped: {failed_datasets}")
+    else:
+        print("All datasets were run and completed successfully")
