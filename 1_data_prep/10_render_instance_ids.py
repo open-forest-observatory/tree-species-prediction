@@ -115,12 +115,14 @@ def render_dataset(dataset: str) -> bool:
         )
 
         if VIS:
+            # Show a subset of rendered labels, colormapped
             show_segmentation_labels(
                 label_folder=render_output_folder,
                 image_folder=image_folder,
                 savefolder=vis_output_folder,
                 num_show=10,
                 label_suffix=".tif",
+                IDs_to_labels=ids_to_labels,
             )
     except Exception as e:
         print(
