@@ -158,6 +158,6 @@ if __name__ == "__main__":
     failed_datasets = np.array(datasets)[np.logical_not(successes)].tolist()
 
     if len(failed_datasets) > 0:
-        print("The following datasets failed or were skipped: {failed_datasets}")
+        print(f"The following datasets failed or were skipped: {failed_datasets}")
     else:
         print("All datasets were run and completed successfully")
