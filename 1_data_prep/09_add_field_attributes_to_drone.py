@@ -10,8 +10,7 @@ import shapely
 import _bootstrap
 from configs.path_config import path_config
 
-# These datasets have been identified as bad because of either low recall (first seven) or a high
-# fraction of hardwood species (remaining three).
+# These datasets have been identified as bad because of low recall
 DATASETS_TO_EXCLUDE = [
     "0069_000227_000233",
     "0069_000781_000780",
@@ -20,9 +19,6 @@ DATASETS_TO_EXCLUDE = [
     "0273_001016_001015",
     "0275_001017_001019",
     "0276_001013_001014",
-    "0049_000136_000133",
-    "0100_000153_000155",
-    "0110_000136_000133",
 ]
 
 
