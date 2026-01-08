@@ -473,7 +473,7 @@ skipped_datasets = [
     dset_name for dset_name, success in zip(dset_names, successes) if not success
 ]
 
-missing_img_cts = sum([rd["missing_image_cts"] for rd in results_dicts])
+missing_img_cts = sum([rd["missing_img_cts"] for rd in results_dicts])
 total_processed = sum([rd["total_processed"] for rd in results_dicts])
 with_species_label = sum([rd["with_species_label"] for rd in results_dicts])
 without_species_label = sum([rd["without_species_label"] for rd in results_dicts])
