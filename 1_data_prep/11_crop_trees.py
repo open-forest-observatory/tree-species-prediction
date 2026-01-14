@@ -273,7 +273,7 @@ def chip_images(dset_name: str) -> tuple:
         # Store the area as an attribute for future use
         shapes_gdf["polygon_area"] = shapes_gdf.area
         # Find the max area per ID
-        max_area_per_class = shapes_gdf.groupby("IDs").max()
+        max_area_per_class = shapes_gdf[["polygon_area", "IDs"]].groupby("IDs").max()
 
         # Merge the area and max area by IDs
         shapes_gdf = shapes_gdf.join(max_area_per_class, on="IDs", rsuffix="_max")
@@ -460,7 +460,6 @@ else:
     all_dset_names = sorted(os.listdir(tree_label_mask_paths))
     dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
     print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
-
 
 # Execute chipping with multiprocessing. This is the slow step.
 with Pool(N_PROCESSES) as p:
