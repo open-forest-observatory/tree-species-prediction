@@ -5,7 +5,8 @@ from pathlib import Path
 from tqdm import tqdm
 import numpy as np
 from datetime import datetime
-import json, yaml
+import json
+import yaml
 from dataclasses import asdict
 import matplotlib.pyplot as plt
 import copy
@@ -18,8 +19,8 @@ from training_utils.initializers import init_training
 from training_utils.step_epoch import _step_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, stratified_split
 from training_utils.visualization import confusion_matrix
-from training_utils.data_reduction_utils import gradsel_reduce, _is_subset_epoch
-from training_utils.data_utils import get_classes_from_gpd_file_paths, summarize_split_by_tree, check_no_tree_overlap
+from training_utils.gradmatch import GradMatchPBSelector
+from training_utils.data_utils import get_classes_from_gpd_file_paths, summarize_split_by_tree, check_no_tree_overlap, make_selection_loader
 
 ''' TODO:
 - !! Gather gradients for data reduction inside step epoch to avoid extra forward pass !!
@@ -40,19 +41,25 @@ def train():
     train_transform, val_transform, optim, criterion, scheduler, scaler, device, early_stopper = init_training()
 
     # for data reduction
+    subset_selector, selection_loader, omp_diag = None, None, None
     if model_config.use_data_reduction:
         # for choosing optimal data points we only want to look at transformed imgs w/o rng dependence (just scaling and normalizing)
         dset_copy = copy.copy(tree_dset)
+        full_train_loader = copy.copy(train_loader)
         train_dset_val_transform = Subset(dset_copy, train_subset.indices)
         train_dset_val_transform.dataset.static_transform = static_transform
         train_dset_val_transform.dataset.random_transform = val_transform
 
-        # pool of idxs for data reduction to choose from should be shuffled since OMP is greedy,
-        # but we only want to shuffle once so it is more liable to converge to a consistent subset
-        rng = np.random.default_rng()
-        perm = rng.permutation(len(train_dset_val_transform)) # idxs local to the subset (not the global idxs that ref the full dset)
-        
-        prev_subset_idxs = None # for tracking each iteration's similarity
+        selection_loader = make_selection_loader(tree_dset, train_subset, static_transform, val_transform)
+        subset_selector = GradMatchPBSelector(
+            model=tree_model,
+            criterion=criterion,
+            device=device,
+            lam=dr_config.omp_regularizer_strength,
+            eps=1e-4,
+        )
+
+    prev_sample_idxs, cur_batch_weights, omp_diag = None, None, None # for tracking each iteration's similarity and weights
 
     # for naming ckpt dir
     ts = datetime.now().strftime('%m%d-%H%M%S')
@@ -71,14 +78,34 @@ def train():
         if epoch >= model_config.freeze_backbone_epochs and n_layers_unfrozen <= model_config.n_last_layers_to_unfreeze:
             n_layers_unfrozen += model_config.layer_unfreeze_step
             tree_model.unfreeze_last_n_backbone_layers(n=n_layers_unfrozen)
-            early_stopper.enabled = False
+
+        # Data reduction -> GradMatchPB
+        if subset_selector is not None and subset_selector._is_subset_epoch(epoch, model_config.epochs):
+            chosen_subset_indices, sample_weight_map, omp_diag = subset_selector.select_perbatch(
+                selection_loader=selection_loader,
+                subset_ratio=dr_config.subset_ratio,
+                positive=True,
+            )
+            # rebuild training loader on the selected indices training transforms
+            chosen_train_subset = Subset(train_subset, chosen_subset_indices)
+            train_loader = DataLoader(
+                chosen_train_subset,
+                batch_size=model_config.batch_size,
+                shuffle=True,
+                num_workers=model_config.num_workers,
+                pin_memory=True,
+                collate_fn=collate_batch,
+            )
         else:
-            early_stopper.enabled = True
+            sample_weight_map = None
             
-        # train one step
+        # train one epoch
+        # if data reduction enabled and is subset epoch -> train with full data and pool gradients
+        # if data reduction enabled and is NOT subset epoch -> train with previously computed subset
         train_metrics = _step_epoch(
             tree_model, train_loader, device, criterion,
-            optim, scaler, training=True, epoch_num=epoch+1
+            optim, scaler, training=True, epoch_num=epoch+1,
+            sample_weight_map=sample_weight_map
         )
         scheduler.step()
 
@@ -86,7 +113,8 @@ def train():
         with torch.no_grad():
             val_metrics = _step_epoch(
                 tree_model, val_loader, device, criterion,
-                optim=None, scaler=None, training=False, epoch_num=epoch+1
+                optim=None, scaler=None, training=False, epoch_num=epoch+1,
+                sample_weight_map=sample_weight_map
             )
 
             # Compute confusion matrix for validation set
@@ -96,7 +124,7 @@ def train():
         
         # early stopping check
         if early_stopper is not None and early_stopper.enabled:
-            early_stopper.step(val_metrics)
+            early_stopper.step(epoch, val_metrics)
 
         # Logging train metrics
         for key, value in train_metrics.items():
@@ -108,25 +136,7 @@ def train():
         # Log learning rate
         tb_writer.add_scalar("Learning_Rate", scheduler.get_last_lr()[0], epoch + 1)
 
-        # optional gradient based subset selection with OMP (data reduction)
-        if model_config.use_data_reduction and _is_subset_epoch(epoch): # check if time for subset            
-            new_train_loader, chosen_idxs_pool = gradsel_reduce(
-                model=tree_model,
-                dset_view=train_dset_val_transform,     # subset containing training samples but with deterministic (validation) transforms
-                train_dset=train_subset,                # subset with training samples and training transforms
-                criterion=criterion,
-                save_fp=cur_training_out_dir / 'subsets' / f'selection_epoch{epoch+1}.npy',
-                static_transform=static_transform,
-                train_transform=train_transform,
-                reduction_ratio=dr_config.subset_ratio,
-                subbatch_size=dr_config.subbatch_size,
-                preshuffled_idxs=perm,                  # local idxs (w.r.t. the subset)
-                device=device,
-                prev_subset_idxs=prev_subset_idxs       # global idxs (w.r.t. to the original dataset)
-            )
-            del train_loader
-            train_loader = new_train_loader
-            prev_subset_idxs = chosen_idxs_pool
+        #prev_sample_idxs = chosen_idxs_pool
 
         # save ckpt for future analysis
         ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1']:.4f}.pt"
@@ -138,11 +148,12 @@ def train():
             'sched_state': scheduler.state_dict(),
             'train_metrics': train_metrics,
             'val_metrics': val_metrics,
+            'omp_diag': omp_diag,
         }, ckpt_path)
         print(f"*** Saved checkpoint to: {ckpt_path}")
 
         with open(log_path, 'w') as log_file:
-            epoch_log = {'epoch': epoch+1, 'train_metrics': train_metrics, 'val_metrics': val_metrics}
+            epoch_log = {'epoch': epoch+1, 'train_metrics': train_metrics, 'val_metrics': val_metrics, 'omp_diag': omp_diag}
             json.dump(epoch_log, log_file, indent=4)
 
         if early_stopper is not None and early_stopper.stopped:

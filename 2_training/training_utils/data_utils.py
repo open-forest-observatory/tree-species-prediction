@@ -385,6 +385,31 @@ def cap_indices_evenly_by_class(
     rng.shuffle(selected)
     return selected
 
+def make_selection_loader(tree_dset, train_subset, static_T, val_T):
+    # Copy base dataset so transforms don't interfere with the training dataset object
+    sel_cp = copy.copy(tree_dset)
+    sel_cp.static_transform = static_T
+    sel_cp.random_transform = val_T
+
+    sel_subset = Subset(sel_cp, train_subset.indices)
+
+    sel_loader = DataLoader(
+        sel_subset,
+        batch_size=model_config.batch_size,
+        shuffle=False,                 # critical
+        num_workers=model_config.num_workers,
+        pin_memory=True,
+        collate_fn=collate_batch,
+        drop_last=False,
+    )
+    return sel_loader
+
+def _unpack_batch(batch, device):
+    # collate gives (imgs, labels, metas)
+    imgs, labels, metas = batch
+    return imgs.to(device, non_blocking=True), labels.to(device, non_blocking=True), metas
+
+
 def assemble_dataloaders(
         tree_dset,
         static_T,

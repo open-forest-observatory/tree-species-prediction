@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 from torchvision import transforms as T
 
 from PIL import Image
@@ -58,21 +58,25 @@ class TreeDataset(Dataset):
         self.img_paths = self.get_img_paths_from_root()
         self.parse_file_names() # assemble meta data dict from filename
         if not self.img_paths:
-            raise RuntimeError("No image files found.")
+            raise RuntimeError(f"No image files found in: {self.imgs_root}")
         
         # map string species labels to int idxs, and have a reverse map to get labels back from idxs
         species_labels = sorted({m['species'] for m in self.meta})
         self.label2idx_map = {sp: i for i, sp in enumerate(species_labels)}
         self.idx2label_map = {i: sp for sp, i in self.label2idx_map.items()}
 
-        for m in self.meta:
+        for i, m in enumerate(self.meta):
             m['label_idx'] = self.label2idx_map[m['species']]
             m['unique_treeID'] = f"{m['dset']}-{m['treeID']}"
+            m['global_idx'] = i # id of sample in dataset for referencing even after shuffling
 
         # get the row idx of each tree in the gpkg file
         if gpkg_dir is not None:
             self.gpkg_dir = Path(gpkg_dir)
-            self.gpkg_LUT = self._build_gpkg_lookup_tables() # dset_path : {tree_id (str): gpkg_row_idx}
+            try: 
+                self.gpkg_LUT = self._build_gpkg_lookup_tables() # dset_path : {tree_id (str): gpkg_row_idx}
+            except FileNotFoundError as fne:
+                print(f"WARNING: Missing gpkg file for dset: {gpkg_dir}")
             #print(self.gpkg_LUT)
             #debug
             problem_dsets = problem_tree_ids = set() 
@@ -80,7 +84,9 @@ class TreeDataset(Dataset):
                 tree_id_str = str(meta_dict['treeID'])
                 gpkg_fp = gpkg_dir / f"{meta_dict['dset']}.gpkg"
                 if not gpkg_fp.exists():
-                    raise FileNotFoundError(f"Could not find: {gpkg_fp}")
+                    #raise FileNotFoundError(f"Could not find: {gpkg_fp}")
+                    # TODO: some gpkg files missing presumably from recent dataset restructures; ignore missing gpkg files for now
+                    continue
                 
                 # TODO: Sometimes can't find the row index, says key error with some tree_id_strs
                 # waiting for data prep work earlier in pipeline to rerun cropped trees and then this should be fine
@@ -175,7 +181,9 @@ class TreeDataset(Dataset):
         for dset_id in unique_dset_ids:
             gpkg_path = self.gpkg_dir / f"{dset_id}.gpkg"
             if not gpkg_path.exists():
-                raise FileNotFoundError(f"GPKG for dset '{dset_id}' not found: {gpkg_path}")
+                #raise FileNotFoundError(f"GPKG for dset '{dset_id}' not found: {gpkg_path}")
+                # TODO: some gpkg files missing presumably from recent dataset restructures; ignore missing gpkg files for now
+                continue
 
             gdf = gpd.read_file(gpkg_path)  # single layer assumed
             if self.tree_id_col_name not in gdf.columns:
@@ -225,6 +233,17 @@ class TreeDataset(Dataset):
         except Exception:
             # If multiple workers race, one will succeed; ignore failures
             pass
+
+class ListBatchSampler(Sampler):
+    """Yield precomputed batches (lists of dataset indices) in fixed order."""
+    def __init__(self, batches: list[list[int]]):
+        self.batches = [list(map(int, b)) for b in batches]
+
+    def __iter__(self):
+        yield from self.batches
+
+    def __len__(self):
+        return len(self.batches)
     
 def collate_batch(batch):
     imgs, labels, metas = zip(*batch)             # tuples of length B

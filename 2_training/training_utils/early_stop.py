@@ -15,15 +15,16 @@ class EarlyStopper:
     bad_epochs: int = 0
     stopped: bool = False
     enabled: bool = field(init=False, repr=True)  # derived from patience>0
+    lag_epochs: int = 0 # how many epochs to delay tracking early stopping
 
     def __post_init__(self):
         self.enabled = self.patience > 0
         if self.objective == "min":
             self.best_value = np.inf
 
-    def step(self, metrics: Dict[str, Any]) -> Optional[tuple[bool, bool]]:
+    def step(self, epoch: int, metrics: Dict[str, Any]) -> Optional[tuple[bool, bool]]:
         """Returns (stop_now, is_best) if enabled"""
-        if not self.enabled:
+        if not self.enabled and epoch <= self.lag_epochs:
             return
 
         assert self.monitor_metric in metrics, f"'{self.monitor}' not in metrics: {list(metrics.keys())}"

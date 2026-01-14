@@ -1,11 +1,16 @@
 import torch
 from torch.amp import autocast
+import torch.nn.functional as F
 
 from tqdm import tqdm
 
 from configs.model_config import model_config
+from training_utils.data_reduction_utils import _flatten_param_grads
 
-def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=None, training=False, epoch_num=None):
+def _step_epoch(
+    tree_model, dataloader, device, criterion,
+    optim=None, scaler=None, training=False, epoch_num=None,
+    grad_buffer=None, sample_weight_map=None):
     # same fn used for training and validation, so setup accordingly
     if training:
         tree_model.train()
@@ -16,7 +21,7 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
         tree_model.eval()
         pbar_msg = f"Validation epoch {epoch_num if epoch_num is not None else ''}"
         use_amp = False
-
+    
     # loss / acc tracking init
     running_loss = 0.0
     total = 0
@@ -26,7 +31,7 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
 
     # iterate through batches
     pbar = tqdm(dataloader, desc=pbar_msg)
-    for batch_idx, (imgs, labels, _) in enumerate(pbar):
+    for batch_idx, (imgs, labels, metas) in enumerate(pbar):
         imgs = imgs.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
         batch_size = labels.size(0)
@@ -34,7 +39,25 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
         # forward with optional automatic mixed precision
         with autocast(enabled=use_amp, device_type='cuda', dtype=model_config.amp_dtype):
             logits = tree_model(imgs)
-            loss = criterion(logits, labels)
+
+            # scale loss by weights given from OMP per batch importance
+            if training and sample_weight_map is not None:
+                # per-sample loss
+                loss_vec = F.cross_entropy(logits, labels, reduction='none')  # (B,)
+
+                # weights lookup by global_idx
+                w = torch.tensor(
+                    [sample_weight_map[m['global_idx']] for m in metas],
+                    device=labels.device,
+                    dtype=loss_vec.dtype,
+                )  # (B,)
+
+                # normalize weights so loss scale stays comparable epoch-to-epoch
+                w = w / (w.mean() + 1e-12)
+
+                loss = (loss_vec * w).mean()
+            else:
+                loss = criterion(logits, labels)
 
         if training:
             # zero previous gradients before backprop
@@ -42,10 +65,22 @@ def _step_epoch(tree_model, dataloader, device, criterion, optim=None, scaler=No
             if scaler is not None:
                 # scale back to fp32 and then backprop
                 scaler.scale(loss).backward()
+                
+                if grad_buffer is not None: # gather gradients for data reduction
+                    scaler.unscale_(optim) # need to scale back before pooling gradients
+                    batch_grads_flat = _flatten_param_grads(tree_model, param_keep_type='classifier')
+                    batch_ids = [m['global_idx'] for m in metas]
+                    grad_buffer.add(batch_grads_flat, batch_ids)
+
                 scaler.step(optim) # step down the gradient
                 scaler.update()
             else:
                 loss.backward() # back propagation
+                if grad_buffer is not None: # gather gradients for data reduction
+                    batch_grads_flat = _flatten_param_grads(tree_model, param_keep_type='classifier')
+                    batch_ids = [m['global_idx'] for m in metas]
+                    grad_buffer.add(batch_grads_flat, batch_ids)
+
                 optim.step() # step down the gradient
 
         # bunch of running metrics

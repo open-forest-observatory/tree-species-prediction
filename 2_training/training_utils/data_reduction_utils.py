@@ -9,12 +9,34 @@ from tqdm import tqdm
 import copy
 
 from models.TreeSpeciesClassifier import TreeSpeciesClassifierFromPretrained
-from data.dataset import collate_batch
+from data.dataset import collate_batch, ListBatchSampler
 from training_utils.omp import omp_select
 from training_utils.data_utils import assemble_dataloaders
 from training_utils.metrics import compute_pairwise_jaccard_similarity
+from training_utils.visualization import plot_projection_sorted, plot_projection_scatter, plot_singleton_quality
 from configs.data_reduction_config import dr_config
 from configs.model_config import model_config
+
+class GradBuffer:
+    '''
+    pool gradients of training epoch to use for data reduction.
+    This avoids needing an additional forward pass on all data as we gather during training
+    '''
+    def __init__(self):
+        self.grads = [] # list of (param_dim,) tensors
+        self.batch_sample_idxs = [] # list of lists containing sample ids per batch
+
+    def add(self, grad_vec, batch_ids):
+        self.grads.append(grad_vec.detach().cpu())
+        self.batch_sample_idxs.append(list(map(int, batch_ids)))
+
+    def assemble_grad_mat_and_sum(self, row_norm=False):
+        grads = torch.stack(self.grads, dim=0) # (n_batches, param_dim)
+        if row_norm:
+            grads = torch.nn.functional.normalize(grads, dim=1, eps=1e-12)
+        grads_sum = grads.sum(dim=0) # (param_dim,)
+        return grads, grads_sum, self.batch_sample_idxs
+
 
 def generate_params(**params):
     """
@@ -69,6 +91,8 @@ def gather_gradients(
                             # more likely to converge to consistent subset choices
 ):
     """
+    DEPRECATED FOR NOW, LEAVING HERE UNTIL CONFIRMED NO LONGER NECESSARY
+
     3 deep for loops looks bad I know, but I swear it's still just O(n),
     there's just a lot of chunks since we have a batch size for model training,
     which is different than the subbatch size we use for a better gradient approximation.
@@ -162,90 +186,77 @@ def _is_subset_epoch(epoch):
 
 def gradsel_reduce(
         model,
-        dset_view,              # deterministic dataset/subset to gather gradients and choose points from
+        grad_buffer,
         train_dset,             # same samples as in `dset_vew` but with training transforms (current training split)
-        criterion,
         static_transform,
         train_transform,
         reduction_ratio,
-        subbatch_size,
         device,
-        save_fp=None,
-        preshuffled_idxs=None,
-        prev_subset_idxs=None # for jaccard sim comparison
+        lam=0.5,
+        subsets_save_fp=None,
+        plots_save_fp=None,
+        prev_sample_idxs=None,   # for jaccard sim comparison
+        track_diagnostics=False
     ): 
-    # ensure subbatch budget won't be 0, 
-    # i.e. |_(reduction ratio * num_batches)_| > 0
-    assert int(reduction_ratio * math.ceil(len(dset_view) / subbatch_size)) >= 1, f"ERROR: Reduction ratio too small for dataset size and/or batch_size!"
-    print(f"Will select subsets every {dr_config.epoch_selection_interval} epochs, warm start: {dr_config.num_warm_start_epochs}.")
-
-    # TODO: integrate performance metrics
-    metric = -1
+    grad_mat, grad_sum, batch_ids_list = grad_buffer.assemble_grad_mat_and_sum(row_norm=True) # grad_mat -> (n_batches, param_dim)
+    budget = int(reduction_ratio * grad_mat.shape[0])
+    print(f"Will select {budget} batches; Gradient Matrix dim = {grad_mat.shape}")
         
     # update subset selections
     print("*** Performing data reduction ***")   
     t0_subset = time.time()  
     
-    # gather gradients of Discriminator on real data (since that's what we are subsetting)
-    grad_mat, grad_sum, subbatch_global_idxs = gather_gradients(
-        model,
-        dset_view,
-        criterion,
-        device,
-        subbatch_size,
-        model_config.batch_size,
-        preshuffled_idxs=preshuffled_idxs
-    )
-
-    print(f"*** Gradient Matrix shape: {grad_mat.shape} - Gradient sums (residuals for OMP): {grad_sum}")
-    
-    # determine budget based on reduction ratio and subbatch size'
-    # this is how many subbatches worth of samples we can take
-    budget = int(reduction_ratio * grad_mat.shape[0])
-    print(budget, grad_mat.size())
-    
-    # run Orthogonal Matching Pursuit to determine best idxs using gradient matrix and gradient sum
-    print("Solving OMP system... (choosing best gradient approximating subsets)")
-    new_subbatch_idxs = omp_select(grad_mat, grad_sum, budget, device)
+    # call OMP to choose the optimal batches of images
+    diagnostics = None
+    if track_diagnostics:
+        sel_rows, sel_coeffs, diagnostics = omp_select(grad_mat, grad_sum, budget, device=device, lam=lam, positive=True, track_diagnostics=track_diagnostics)
+        
+        # visuals for omp
+        if plots_save_fp is not None:
+            plot_projection_sorted(omp_diagnostics['proj_vals'], plots_save_fp, epoch=epoch, title_prefix="OMP")
+            plot_projection_scatter(omp_diagnostics['proj_vals'], plots_save_fp, epoch=epoch, title_prefix="OMP")
+            plot_singleton_quality(
+                omp_diagnostics['topk_cos'], omp_diagnostics['topk_rr'], 
+                omp_diagnostics['botk_cos'], omp_diagnostics['botk_rr'],
+                plots_save_fp, epoch=epoch
+            )
+    else:
+        sel_rows, sel_coeffs = omp_select(grad_mat, grad_sum, budget, device=device, lam=lam, positive=True, track_diagnostics=track_diagnostics)
     subset_sel_time = time.time() - t0_subset # track time for selecting subset of data
-    print(f"Chose: {len(new_subbatch_idxs)} subbatches ({len(new_subbatch_idxs) * subbatch_size}) out of {len(dset_view)}")
-
-    # get actual sample idxs from subbatch idxs
-    new_global_idxs = []
-    for subbatch_i in new_subbatch_idxs:
-        # extend with sample idxs from idxs of chosen subsets
-        new_global_idxs.extend(subbatch_global_idxs[subbatch_i])
-
+    
+    # flatten selected batches to get just sample ids; maintain batch contents from selected batches
+    selected_batches = [batch_ids_list[r] for r in sel_rows] # List[List[int]]
+    batch_weights = sel_coeffs.tolist() # List[float]
+    sel_sample_ids = [sid for batch in selected_batches for sid in batch] # flatten sample ids for logging purposes only
+    
     # init new subset and dataloader with chosen idxs
     train_base = train_dset.dataset
     train_base.static_transform = static_transform
     train_base.random_transform = train_transform
 
-    new_train_subset = Subset(train_base, new_global_idxs)
-    new_train_loader = DataLoader
-
-    print(f"New subset has {len(new_train_subset.indices)} items.\nSubset selection took {subset_sel_time:.4f} seconds to compute")
+    batch_sampler = ListBatchSampler(selected_batches)
+    new_train_loader = DataLoader(
+        train_base,
+        batch_sampler=batch_sampler,
+        #shuffle=True,
+        num_workers=model_config.num_workers,
+        pin_memory=True,
+        collate_fn=collate_batch
+    )
+    print(f"New subset has {len(sel_sample_ids)} items.\nSubset selection took {subset_sel_time:.4f} seconds to compute")
 
     # save computed subset idxs
-    save_selection(save_fp, new_global_idxs)
+    if subsets_save_fp is not None:
+        save_selection(subsets_save_fp, sel_sample_ids)
 
     del grad_mat, grad_sum
     gc.collect()
     torch.cuda.empty_cache()
 
-    new_train_loader = DataLoader(
-        new_train_subset,
-        batch_size=model_config.batch_size,
-        shuffle=True,
-        num_workers=model_config.num_workers,
-        pin_memory=True,
-        collate_fn=collate_batch
-    )
-
     # jaccard similarity compares how different set A (previously chosen subset) is from set B (newly chosen subset)
-    if prev_subset_idxs is not None:
-        jaccard_sim = compute_pairwise_jaccard_similarity(prev_subset_idxs, new_global_idxs)
+    if prev_sample_idxs is not None:
+        jaccard_sim = compute_pairwise_jaccard_similarity(prev_sample_idxs, sel_sample_ids)
         print(f"New subset is {jaccard_sim*100:.4f}% similar to previous subset")
 
 
-    return new_train_loader, new_global_idxs
+    return new_train_loader, sel_sample_ids, batch_weights, diagnostics

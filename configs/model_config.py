@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 import os
 from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 
 from utils.config_utils import parse_config_args, register_yaml_str_representers
 
@@ -30,11 +30,11 @@ class TreeModelConfig:
     val_ratio: float = 0.2                      # ratio of data to use for validation set; ignored if `data_split_level == 'plot'`
     downsample_threshold: int = 574             # if longer edge of input img > this, downsample instead of just crop
     downsample_to: int = 518                    # size to downsample long edge too before padding
-    num_workers: int = 8                        # workers for the dataloader
+    num_workers: Union[int,str] = 'auto'        # workers for the dataloader; 'auto' sets num workers to half the current CPU core count
     max_class_imbalance_factor: float = 0       # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
     min_samples_per_class: int = 500            # 0 -> no limit; exclude classes with fewer than this num samples
-    max_total_samples: int = 0                  # for testing purposes, randomly subsample images up to this amount;
+    max_total_samples: int = 50000              # for testing purposes, randomly subsample images up to this amount;
                                                 # set to 0 to have no upper limit
     use_class_balancing: bool = True            # use weighted random sampler to balance classes during training
     
@@ -43,10 +43,10 @@ class TreeModelConfig:
     data_split_level: Literal['plot', 'tree', 'image'] = 'tree'
     
     # epoch loop iterations
-    epochs: int = 25                            # num passes through the training dataset
+    epochs: int = 20                            # num passes through the training dataset
     warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
     freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
-    batch_size: int = 16                         # how many images processed per backprop/param update
+    batch_size: int = 16                        # how many images processed per backprop/param update
     
     # parameter stepping
     head_lr: float = 1e-3                       # learning rate: how big of a step to take down gradient when updating model params
@@ -60,14 +60,14 @@ class TreeModelConfig:
                                                 # set to 0 for no intermediate layer
 
     # optimizations
-    n_last_layers_to_unfreeze: int = 6          # unfreezing all layers causes OOM errors, choose how many of the last layers to make tunable
+    n_last_layers_to_unfreeze: int = 4          # unfreezing all layers causes OOM errors, choose how many of the last layers to make tunable
     layer_unfreeze_step: int = 2                # each epoch how many layers to unfreeze UP TO `n_last_layers_to_unfreeze`
     use_amp: bool = True                        # automated mixed precision
     amp_dtype: torch.dtype = torch.float16      # dtype for amp scaling
     use_data_reduction: bool = False            # gradient based subset selection (see `configs/data_reduction_config.py``)
     
     # early stopping
-    patience: int = 4                           # how many consecutive epochs must be same or worse before stopping training early
+    patience: int = 0                           # how many consecutive epochs must be same or worse before stopping training early
                                                 # enter 0 to disable early stopping
     improvement_margin: float = 0.1              # how much better does prev epoch have to be to not stop early
     # metric tracked to determine when to stop (corresponds to metrics dict returned by `step_epoch()`)
@@ -80,4 +80,7 @@ class TreeModelConfig:
 
 
 model_config, model_args = parse_config_args(TreeModelConfig)
+if model_config.num_workers == 'auto':
+    model_config.num_workers = os.cpu_count()
+
 register_yaml_str_representers(torch.dtype) # YAML dump doesn't natively know what to do with torch types

@@ -47,7 +47,7 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
         # load weights from pretrained
         # stay on cpu for now to avoid fragmentation and allow for easier modifications in init
         ckpt_path = Path(ckpt_path)
-        state_dict = torch.load(ckpt_path, map_location='cpu')['state_dict']
+        state_dict = torch.load(ckpt_path, map_location='cpu', weights_only=False)['state_dict']
 
         # strict=False here allows for us to init the weights without the original classification head
         self.backbone.load_state_dict(state_dict, strict=False) 
@@ -79,6 +79,9 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
             T.ToTensor(),
             T.Normalize(mean=backbone_cfg["mean"], std=backbone_cfg["std"]),
         ])
+
+    def head_parameters(self):
+        return [p for p in self.classifier_head.parameters() if p.requires_grad]
 
     def toggle_backbone_weights_trainability(self, backbone_is_trainable):
         for p in self.backbone.parameters():

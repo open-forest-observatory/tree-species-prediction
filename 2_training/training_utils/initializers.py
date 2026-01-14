@@ -87,6 +87,7 @@ def init_training():
     # controls early stopping of training if performance plateaus
     # disabled if model_config.patience == 0
     early_stopper = EarlyStopper(**kwargs_from_config(model_config, EarlyStopper))
+    early_stopper.lag_epochs = (model_config.n_last_layers_to_unfreeze * model_config.layer_unfreeze_step) + model_config.freeze_backbone_epochs
 
     #for name, p in tree_model.named_parameters():
     #    print(f"{name:60s} | shape={tuple(p.shape)} | requires_grad={p.requires_grad}")

@@ -13,7 +13,7 @@ class PathConfig:
     metashape_python_path: Path = Path("/home/exouser/miniconda3/envs/meta/bin/python")
     
     # This path can edited if working with a copy of the data
-    data_root_folder: Path = Path("/ofo-share/species-prediction-project/")
+    data_root_folder: Path = Path("/ofo-share/project-data/species-prediction-project/")
     
     # Inputs
     # TODO this could be updated to be within the DATA_ROOT_FOLDER tree
@@ -93,7 +93,7 @@ class PathConfig:
 
     # output of 12_tree_crops.py
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
-    cropped_tree_training_images: Path = intermediate_data_folder / 'cropped_trees_valid_shifts'
+    cropped_tree_training_images: Path = intermediate_data_folder / 'cropped_trees_v1'
 
     # plant clef 2024 pretrained model as a base
     pretrained_model_path: Path = intermediate_data_folder / 'pretrained_models' / 'model_best_vit_base_patch14_reg4_dinov2_lvd142m_pc24_onlyclassifier_then_all.pth.tar'
@@ -104,7 +104,7 @@ class PathConfig:
 
     # cache of static image transformations (resizing to input dim)
     # kept local to not interfere with others' runs
-    static_transformed_images_cache_dir: Path = Path("2_training/cache")
+    static_transformed_images_cache_dir: Path = Path("cache")
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
