@@ -4,14 +4,8 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 import _bootstrap
-from training_utils.omp import OrthogonalMP_REG_Parallel_V1
+from training_utils.data_reduction.omp import OrthogonalMP_REG_Parallel_V1
 from configs.data_reduction_config import dr_config
-
-
-def _unpack_batch(batch, device):
-    # your collate gives (imgs, labels, metas)
-    imgs, labels, metas = batch
-    return imgs.to(device, non_blocking=True), labels.to(device, non_blocking=True), metas
 
 
 class GradMatchPBSelector:
@@ -68,7 +62,7 @@ class GradMatchPBSelector:
         n_batches = len(batch_wise_indices)
         k_batches = max(1, int(math.ceil(subset_ratio * n_batches)))
 
-        # --- build grad atoms (one per batch) ---
+        # build grad atoms (one per batch)
         grad_list = []
         grad_pbar = tqdm(
             selection_loader,
@@ -76,8 +70,8 @@ class GradMatchPBSelector:
             leave=True,
             dynamic_ncols=True,
         )
-        for batch in grad_pbar:
-            imgs, labels, _metas = _unpack_batch(batch, self.device)
+        for imgs, labels, _metas in grad_pbar:
+            imgs, labels = imgs.to(self.device, non_blocking=True), labels.to(self.device, non_blocking=True)
             g_b = self._batch_grad_head(imgs, labels)
             grad_list.append(g_b)
 
@@ -85,13 +79,8 @@ class GradMatchPBSelector:
         A = grads_per_batch.transpose(0, 1).contiguous()         # (d, n_batches)
         b = grads_per_batch.sum(dim=0).contiguous()              # (d,)
 
-        # --- OMP on GPU (your function) ---
-        omp_pbar = tqdm(
-            total=1,
-            desc=f"GradMatchPB: OMP (k={k_batches}/{n_batches})",
-            leave=True,
-            dynamic_ncols=True,
-        )
+        # OMP on GPU
+        print(f"Gradient Matrix shape: {A.shape} (n_class_head_params x n_batches)")
         reg = OrthogonalMP_REG_Parallel_V1(
             A, b,
             nnz=k_batches,
@@ -100,42 +89,34 @@ class GradMatchPBSelector:
             tol=self.eps,
             device=str(self.device),
         )  # (n_batches,)
-        omp_pbar.update(1)
-        omp_pbar.close()
 
         chosen_batch_ids = torch.nonzero(reg).view(-1).tolist()
 
         # selection_loader.dataset is a Subset(sel_cp, train_subset.indices)
         sel_subset = selection_loader.dataset
-        base_ds = sel_subset.dataset  # TreeDataset copy
-        subset_indices = sel_subset.indices  # maps subset idx -> original tree_dset idx
+        base_indices = sel_subset.indices   # maps subset_idx -> base_ds_idx
+        chosen_subset_indices = []          # subset indices into sel_subset (0..len(sel_subset)-1)
+        sample_weight_map = {}              # base_ds_idx -> gamma
 
-        chosen_subset_indices = []          # indices into selection subset (used to build new Subset)
-        sample_weight_map = {}              # global_idx -> weight
-
-        # --- expand chosen batches -> chosen samples + gammas ---
-        expand_pbar = tqdm(
-            chosen_batch_ids,
-            desc=f"GradMatchPB: expanding {len(chosen_batch_ids)} batches -> samples",
-            leave=True,
-            dynamic_ncols=True,
-        )
-        for bid in expand_pbar:
+        gradmatch_pbar = tqdm(chosen_batch_ids, desc=f"GradMatchPB: expanding {len(chosen_batch_ids)} batches -> samples", dynamic_ncols=True)
+        for bid in gradmatch_pbar:
             gamma = float(reg[bid].item())
-            subset_batch_idxs = batch_wise_indices[bid]  # indices into sel_subset (0..len(sel_subset)-1)
+            subset_batch_idxs = batch_wise_indices[bid]  # subset indices into sel_subset
 
             chosen_subset_indices.extend(subset_batch_idxs)
 
-            # convert subset idx -> global_idx via meta
+            # key weights by BASE dataset index (stable across any future Subset nesting)
             for sub_i in subset_batch_idxs:
-                orig_i = subset_indices[sub_i]                  # index into original tree_dset ordering
-                gidx = int(base_ds.meta[orig_i]["global_idx"])  # stored in meta
-                sample_weight_map[gidx] = gamma
+                base_i = int(base_indices[sub_i])
+                sample_weight_map[base_i] = gamma
 
         diag = {
             "n_batches_total": n_batches,
             "k_batches": k_batches,
-            "n_points_selected": len(chosen_subset_indices),
             "reg_nnz": len(chosen_batch_ids),
+            "n_points_selected": len(chosen_subset_indices),
+            "subset_ratio": subset_ratio,
         }
+
         return chosen_subset_indices, sample_weight_map, diag
+

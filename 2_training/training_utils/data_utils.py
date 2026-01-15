@@ -385,31 +385,6 @@ def cap_indices_evenly_by_class(
     rng.shuffle(selected)
     return selected
 
-def make_selection_loader(tree_dset, train_subset, static_T, val_T):
-    # Copy base dataset so transforms don't interfere with the training dataset object
-    sel_cp = copy.copy(tree_dset)
-    sel_cp.static_transform = static_T
-    sel_cp.random_transform = val_T
-
-    sel_subset = Subset(sel_cp, train_subset.indices)
-
-    sel_loader = DataLoader(
-        sel_subset,
-        batch_size=model_config.batch_size,
-        shuffle=False,                 # critical
-        num_workers=model_config.num_workers,
-        pin_memory=True,
-        collate_fn=collate_batch,
-        drop_last=False,
-    )
-    return sel_loader
-
-def _unpack_batch(batch, device):
-    # collate gives (imgs, labels, metas)
-    imgs, labels, metas = batch
-    return imgs.to(device, non_blocking=True), labels.to(device, non_blocking=True), metas
-
-
 def assemble_dataloaders(
         tree_dset,
         static_T,
@@ -420,7 +395,8 @@ def assemble_dataloaders(
         return_subsets=False,
         idxs_pool=None,
         plot_sample_imgs=False,
-        val_ratio=None
+        val_ratio=None,
+        suppress_summary_print=False
     ):
     train_cp = copy.copy(tree_dset)
     val_cp = copy.copy(tree_dset)
@@ -438,7 +414,7 @@ def assemble_dataloaders(
         min_samples_per_class=model_config.min_samples_per_class,
         sample_idxs_pool=idxs_pool,
         val_ratio=val_ratio
-    ) 
+    )
 
     # optionally enforce overall cap with even per-class distribution (applied separately to train/val)
     if upper_limit_n_samples > 0:
@@ -452,6 +428,12 @@ def assemble_dataloaders(
         val_dset_idxs = cap_indices_evenly_by_class(
             val_dset_idxs, lbl_lookup, upper_val_limit
         )
+
+    if not suppress_summary_print: # summarize print after split
+        print("\n*** SPLIT SUMMARY AFTER CAPPING PER CLASS AND BALANCING CLASSES ***")
+        summarize_split_by_tree(tree_dset, train_dset_idxs, name="train")
+        summarize_split_by_tree(tree_dset, val_dset_idxs,   name="val")
+        check_no_tree_overlap(tree_dset, train_dset_idxs, val_dset_idxs)
 
     # swap default transform of dataset class with the ones just built
     train_cp.static_transform = static_T

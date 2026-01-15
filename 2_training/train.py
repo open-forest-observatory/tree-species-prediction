@@ -19,8 +19,9 @@ from training_utils.initializers import init_training
 from training_utils.step_epoch import _step_epoch
 from training_utils.data_utils import get_classes_from_gpd_file_paths, stratified_split
 from training_utils.visualization import confusion_matrix
-from training_utils.gradmatch import GradMatchPBSelector
-from training_utils.data_utils import get_classes_from_gpd_file_paths, summarize_split_by_tree, check_no_tree_overlap, make_selection_loader
+from training_utils.data_utils import get_classes_from_gpd_file_paths, summarize_split_by_tree, check_no_tree_overlap
+from training_utils.data_reduction.selection import GradMatchPBSelector 
+from training_utils.data_reduction.utils import make_selection_loader, rebuild_train_loader
 
 ''' TODO:
 - !! Gather gradients for data reduction inside step epoch to avoid extra forward pass !!
@@ -87,15 +88,7 @@ def train():
                 positive=True,
             )
             # rebuild training loader on the selected indices training transforms
-            chosen_train_subset = Subset(train_subset, chosen_subset_indices)
-            train_loader = DataLoader(
-                chosen_train_subset,
-                batch_size=model_config.batch_size,
-                shuffle=True,
-                num_workers=model_config.num_workers,
-                pin_memory=True,
-                collate_fn=collate_batch,
-            )
+            train_loader = rebuild_train_loader(train_subset, chosen_subset_indices)
         else:
             sample_weight_map = None
             
@@ -114,7 +107,7 @@ def train():
             val_metrics = _step_epoch(
                 tree_model, val_loader, device, criterion,
                 optim=None, scaler=None, training=False, epoch_num=epoch+1,
-                sample_weight_map=sample_weight_map
+                sample_weight_map=None
             )
 
             # Compute confusion matrix for validation set

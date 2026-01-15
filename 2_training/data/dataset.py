@@ -116,7 +116,8 @@ class TreeDataset(Dataset):
         return len(self.img_paths)
 
     def __getitem__(self, idx: int):
-        meta = self.meta[idx]
+        meta = dict(self.meta[int(idx)])   # copy, don't mutate shared
+        meta['ds_idx'] = int(idx)
 
         # try to access static transformed img on disk cache first
         if self.cache_dir is not None:

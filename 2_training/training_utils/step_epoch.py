@@ -5,12 +5,12 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from configs.model_config import model_config
-from training_utils.data_reduction_utils import _flatten_param_grads
 
 def _step_epoch(
-    tree_model, dataloader, device, criterion,
-    optim=None, scaler=None, training=False, epoch_num=None,
-    grad_buffer=None, sample_weight_map=None):
+        tree_model, dataloader, device, criterion,
+        optim=None, scaler=None, training=False, epoch_num=None,
+        sample_weight_map=None
+    ):
     # same fn used for training and validation, so setup accordingly
     if training:
         tree_model.train()
@@ -37,7 +37,7 @@ def _step_epoch(
         batch_size = labels.size(0)
 
         # forward with optional automatic mixed precision
-        with autocast(enabled=use_amp, device_type='cuda', dtype=model_config.amp_dtype):
+        with autocast(enabled=use_amp, device_type=str(device), dtype=model_config.amp_dtype):
             logits = tree_model(imgs)
 
             # scale loss by weights given from OMP per batch importance
@@ -45,15 +45,25 @@ def _step_epoch(
                 # per-sample loss
                 loss_vec = F.cross_entropy(logits, labels, reduction='none')  # (B,)
 
+                # DEBUG: make sure samples indexed correctly from data
+                ids = [m['ds_idx'] for m in metas]
+                missing = [i for i in ids if i not in sample_weight_map]
+                if missing:
+                    raise KeyError(f"Missing {len(missing)}/{len(ids)} weights. Example missing ds_idx: {missing[:10]}")
+
+
                 # weights lookup by global_idx
                 w = torch.tensor(
-                    [sample_weight_map[m['global_idx']] for m in metas],
+                    [sample_weight_map[int(m['ds_idx'])] for m in metas],
                     device=labels.device,
                     dtype=loss_vec.dtype,
                 )  # (B,)
+                # sanity checks
+                assert torch.isfinite(w).all()
+                assert (w >= 0).all()
 
                 # normalize weights so loss scale stays comparable epoch-to-epoch
-                w = w / (w.mean() + 1e-12)
+                #w = w / (w.mean() + 1e-12)
 
                 loss = (loss_vec * w).mean()
             else:
@@ -65,22 +75,10 @@ def _step_epoch(
             if scaler is not None:
                 # scale back to fp32 and then backprop
                 scaler.scale(loss).backward()
-                
-                if grad_buffer is not None: # gather gradients for data reduction
-                    scaler.unscale_(optim) # need to scale back before pooling gradients
-                    batch_grads_flat = _flatten_param_grads(tree_model, param_keep_type='classifier')
-                    batch_ids = [m['global_idx'] for m in metas]
-                    grad_buffer.add(batch_grads_flat, batch_ids)
-
                 scaler.step(optim) # step down the gradient
                 scaler.update()
             else:
                 loss.backward() # back propagation
-                if grad_buffer is not None: # gather gradients for data reduction
-                    batch_grads_flat = _flatten_param_grads(tree_model, param_keep_type='classifier')
-                    batch_ids = [m['global_idx'] for m in metas]
-                    grad_buffer.add(batch_grads_flat, batch_ids)
-
                 optim.step() # step down the gradient
 
         # bunch of running metrics
@@ -97,33 +95,19 @@ def _step_epoch(
                 fp = torch.zeros(num_classes, dtype=torch.long) # true negatives
                 fn = torch.zeros(num_classes, dtype=torch.long) # false negatives
 
-            # calculate per class tp/fp/fn
-            for label in range(num_classes):
-                label_preds = (preds == label)
-                label_truth = (labels == label)
-                tp[label] += (label_preds & label_truth).sum().cpu()
-                fp[label] += (label_preds & ~label_truth).sum().cpu()
-                fn[label] += (~label_preds & label_truth).sum().cpu()
+            # calculate per class tp/fp/fn per batch
+            update_tp_fp_fn(tp, fp,fn, preds, labels, num_classes)
+            running_metrics = compute_epoch_metrics(running_loss, total, correct, tp, fp, fn, average)
 
-            # compute the accumulated metrics
-            per_label_precision = tp.float() / (tp + fp + eps)
-            per_label_recall = tp.float() / (tp + fn + eps)
-            per_label_f1 = 2 * per_label_precision * per_label_recall / (per_label_precision + per_label_recall + eps)
-            support = (tp + fn) > 0  # ignore classes not seen so far
-
-            precision = per_label_precision[support].mean().item()
-            recall = per_label_recall[support].mean().item()
-            f1 = per_label_f1[support].mean().item()
-            accuracy = correct / total
-            avg_loss = running_loss / total
-
-            pbar.set_postfix(
-                loss=f"{avg_loss:.4f}",
-                acc=f"{accuracy*100:.2f}%",
-                prec=f"{precision*100:.2f}%",
-                rec=f"{recall*100:.2f}%",
-                F1=f"{f1*100:.2f}%"
-            )
+            pbar.set_postfix({
+                '+loss':f"{m['loss']:.4f}",
+                '+acc':f"{m['accuracy']*100:.2f}%",
+                #'+prec':f"{m['precision']*100:.2f}%",
+                #'+rec':f"{m['recall']*100:.2f}%",
+                '+F1':f"{m['f1']*100:.2f}%",
+                '-acc':f"{m['accuracy']*100:.2f}%",
+                '-F1':f"{m['f1']*100:.2f}%",
+            })
 
     # final epoch metrics (metrics in loop are running estimates)
     accuracy = correct / total

@@ -100,7 +100,7 @@ class PathConfig:
 
     # output of model trainings
     # temporarily relative path until testing complete
-    training_ckpt_dir: Path = Path("2_training/ckpts")
+    training_ckpt_dir: Path = Path("ckpts")
 
     # cache of static image transformations (resizing to input dim)
     # kept local to not interfere with others' runs

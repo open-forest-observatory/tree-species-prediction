@@ -34,7 +34,7 @@ class TreeModelConfig:
     max_class_imbalance_factor: float = 0       # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
     min_samples_per_class: int = 500            # 0 -> no limit; exclude classes with fewer than this num samples
-    max_total_samples: int = 50000              # for testing purposes, randomly subsample images up to this amount;
+    max_total_samples: int = 0              # for testing purposes, randomly subsample images up to this amount;
                                                 # set to 0 to have no upper limit
     use_class_balancing: bool = True            # use weighted random sampler to balance classes during training
     
