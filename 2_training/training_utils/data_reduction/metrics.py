@@ -92,12 +92,12 @@ def omp_diagnostics(A, b, reg, k, positive=False):
         "residual_ratio": residual_ratio,
         "cos_sim": cos_sim,
 
-        "topk_cos": topk_cos,                       # (k,)
-        "topk_res_ratio": topk_res_ratio,           # (k,)
-        "bottomk_cos": bottomk_cos,                 # (k,)
-        "bottomk_res_ratio": bottomk_res_ratio,     # (k,)
+        "topk_cos": topk_cos.tolist(),                       # (k,)
+        "topk_res_ratio": topk_res_ratio.tolist(),           # (k,)
+        "bottomk_cos": bottomk_cos.tolist(),                 # (k,)
+        "bottomk_res_ratio": bottomk_res_ratio.tolist(),     # (k,)
 
-        "proj_vals": proj_cpu,
+        "proj_vals": proj_cpu.tolist(),
         "proj_mean": float(proj_cpu.mean().item()) if proj_cpu.numel() else 0.0,
         "proj_std": float(proj_cpu.std(unbiased=False).item()) if proj_cpu.numel() else 0.0,
         "proj_max": float(proj_cpu.max().item()) if proj_cpu.numel() else 0.0,

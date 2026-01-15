@@ -26,9 +26,22 @@ from training_utils.data_reduction.utils import make_selection_loader, rebuild_t
 ''' TODO:
 - Wire in OMP metrics from other project
 - Run driver to train with dr on various ratios
+
+- save images of best, worst, and middle images as dictated by omp
 '''
 
 def train():
+    # for naming ckpt dir
+    ts = datetime.now().strftime('%m%d-%H%M%S')
+    cur_training_out_dir = path_config.training_ckpt_dir / f"{ts}-{model_config.ckpt_dir_tag}"
+    cur_training_out_dir.mkdir(parents=True)
+    tb_writer = SummaryWriter(log_dir=cur_training_out_dir / "tensorboard_logs")
+
+    # save current model config to yaml file
+    with open(cur_training_out_dir / "cfg_dump.yaml", 'w') as cfg_file:
+        cfg_dict = asdict(model_config)
+        yaml.dump(cfg_dict, cfg_file, default_flow_style=False)
+
     # grab species labels and map them to idxs (labels sorted alphabetically)
     # might be useful later for referencing
     gpkg_dsets = list(Path(path_config.drone_crowns_with_field_attributes).glob("*"))
@@ -48,28 +61,25 @@ def train():
         train_dset_val_transform.dataset.static_transform = static_transform
         train_dset_val_transform.dataset.random_transform = val_transform
 
+        visuals_info = { # miscellaneous info needed for metrics/plotting/visualizations purposes; not necessary for core method
+            'backbone_data_mean': tree_model.backbone_data_cfg['mean'],
+            'backbone_data_std': tree_model.backbone_data_cfg['std'],
+            'train_transform': train_transform
+        }
+
         selection_loader = make_selection_loader(tree_dset, train_subset, static_transform, val_transform)
         subset_selector = GradMatchPBSelector(
             model=tree_model,
             criterion=criterion,
             device=device,
             lam=dr_config.omp_regularizer_strength,
-            eps=1e-4,
-            strategy=dr_config.strategy
+            eps=dr_config.omp_tol,
+            strategy=dr_config.strategy,
+            log_dir=cur_training_out_dir / 'data_reduction',
+            visuals_info=visuals_info
         )
 
     prev_sample_idxs, cur_batch_weights, omp_diag = None, None, None # for tracking each iteration's similarity and weights
-
-    # for naming ckpt dir
-    ts = datetime.now().strftime('%m%d-%H%M%S')
-    cur_training_out_dir = path_config.training_ckpt_dir / f"{ts}-{model_config.ckpt_dir_tag}"
-    cur_training_out_dir.mkdir(parents=True)
-    tb_writer = SummaryWriter(log_dir=cur_training_out_dir / "tensorboard_logs")
-
-    # save current model config to yaml file
-    with open(cur_training_out_dir / "cfg_dump.yaml", 'w') as cfg_file:
-        cfg_dict = asdict(model_config)
-        yaml.dump(cfg_dict, cfg_file, default_flow_style=False)
 
     n_layers_unfrozen = 0
     for epoch in range(model_config.epochs):
@@ -83,7 +93,7 @@ def train():
             chosen_subset_indices, sample_weight_map, omp_diag = subset_selector.select_perbatch(
                 selection_loader=selection_loader,
                 subset_ratio=dr_config.subset_ratio,
-                positive=True, save_plots=True
+                positive=True, save_plots=dr_config.save_plots, save_images=dr_config.save_n_omp_rated_imgs
             )
             # rebuild training loader on the selected indices training transforms
             train_loader = rebuild_train_loader(train_subset, chosen_subset_indices)
@@ -145,6 +155,12 @@ def train():
 
         with open(log_path, 'w') as log_file:
             epoch_log = {'epoch': epoch+1, 'train_metrics': train_metrics, 'val_metrics': val_metrics, 'omp_diag': omp_diag}
+            # DEBUG: temporary will remove soon; verifies dtypes of all logged materials
+            '''for ko, vo in epoch_log.items():
+                print(f"\n\n\n*** {ko}\n")
+                if isinstance(vo, dict):
+                    for ki, vi in vo.items():
+                        print(f"ki: {ki}\ntype_vi:{type(vi)}\nvi:{vi}")'''
             json.dump(epoch_log, log_file, indent=4)
 
         if early_stopper is not None and early_stopper.stopped:

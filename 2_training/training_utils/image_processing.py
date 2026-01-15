@@ -1,3 +1,4 @@
+import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
 from torchvision.transforms import InterpolationMode
@@ -40,6 +41,16 @@ def static_preprocess(
     # Always letterbox to a square of `target` once (avoids later re-resizes)
     img = letterbox_to_square(img, target)
     return img
+
+def unnormalize(img_t: torch.Tensor, mean, std):
+    """
+    img_t: (C,H,W) tensor that has been normalized with given mean/std
+    returns: (C,H,W) tensor in [0,1] suitable for to_pil_image
+    """
+    mean = torch.as_tensor(mean, device=img_t.device).view(-1, 1, 1)
+    std  = torch.as_tensor(std,  device=img_t.device).view(-1, 1, 1)
+    x = img_t * std + mean
+    return x.clamp(0.0, 1.0)
 
 def build_transforms(
     target,             # final input size for the model (square)
