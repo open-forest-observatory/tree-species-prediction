@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from configs.model_config import model_config
+from training_utils.metrics import update_tp_fp_fn, compute_epoch_metrics
 
 def _step_epoch(
         tree_model, dataloader, device, criterion,
@@ -97,34 +98,33 @@ def _step_epoch(
 
             # calculate per class tp/fp/fn per batch
             update_tp_fp_fn(tp, fp,fn, preds, labels, num_classes)
-            running_metrics = compute_epoch_metrics(running_loss, total, correct, tp, fp, fn, average)
+            running_macros = compute_epoch_metrics(running_loss, total, correct, tp, fp, fn, average='macro', eps=eps)
+            running_micros = compute_epoch_metrics(running_loss, total, correct, tp, fp, fn, average='micro', eps=eps)
 
             pbar.set_postfix({
-                '+loss':f"{m['loss']:.4f}",
-                '+acc':f"{m['accuracy']*100:.2f}%",
-                #'+prec':f"{m['precision']*100:.2f}%",
-                #'+rec':f"{m['recall']*100:.2f}%",
-                '+F1':f"{m['f1']*100:.2f}%",
-                '-acc':f"{m['accuracy']*100:.2f}%",
-                '-F1':f"{m['f1']*100:.2f}%",
+                'loss':f"{running_macros['loss']:.4f}",
+                'acc':f"{running_macros['accuracy']*100:.2f}%",
+                #'+prec':f"{running_macros['precision']*100:.2f}%",
+                #'+rec':f"{running_macros['recall']*100:.2f}%",
+                'macF1':f"{running_macros['f1']*100:.2f}%",
+                'micF1':f"{running_micros['f1']*100:.2f}%",
             })
 
     # final epoch metrics (metrics in loop are running estimates)
-    accuracy = correct / total
-    per_label_precision = tp.float() / (tp + fp + eps) #
-    per_label_recall  = tp.float() / (tp + fn + eps)
-    per_label_f1 = 2 * per_label_precision * per_label_recall / (per_label_precision + per_label_recall + eps)
-    support = (tp + fn) > 0
-    precision = per_label_precision[support].mean().item()
-    recall = per_label_recall[support].mean().item()
-    f1 = per_label_f1[support].mean().item()
+    # final epoch metrics
+    macro = compute_epoch_metrics(running_loss, total, correct, tp, fp, fn, average="macro", eps=eps)
+    micro = compute_epoch_metrics(running_loss, total, correct, tp, fp, fn, average="micro", eps=eps)
 
     metrics = {
-        'loss': running_loss / total,   # avg negative log likelihood
-        'accuracy': accuracy,           # how many predictions were correct
-        'precision': precision,         # purity; high prec -> minimize false positives
-        'recall': recall,               # sensitivity; high recall -> minimize false negatives
-        'f1': f1,                       # balance of precision and recall
-    }
+        "loss": macro["loss"],  # same loss either way
+        "accuracy": macro["accuracy"],
 
+        "precision_macro": macro["precision"],
+        "recall_macro": macro["recall"],
+        "f1_macro": macro["f1"],
+
+        "precision_micro": micro["precision"],
+        "recall_micro": micro["recall"],
+        "f1_micro": micro["f1"],
+    }
     return metrics

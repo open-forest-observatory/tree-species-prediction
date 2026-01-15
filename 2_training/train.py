@@ -24,11 +24,8 @@ from training_utils.data_reduction.selection import GradMatchPBSelector
 from training_utils.data_reduction.utils import make_selection_loader, rebuild_train_loader
 
 ''' TODO:
-- !! Gather gradients for data reduction inside step epoch to avoid extra forward pass !!
-    - will require subbatch size to be same as batch size
-    - ensure dataset class can return global idx
-    - flatten and store grads with global idxs in _step_epoch() before optim.step()
-- context manager for safe exiting on training
+- Wire in OMP metrics from other project
+- Run driver to train with dr on various ratios
 '''
 
 def train():
@@ -132,7 +129,7 @@ def train():
         #prev_sample_idxs = chosen_idxs_pool
 
         # save ckpt for future analysis
-        ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1']:.4f}.pt"
+        ckpt_path = cur_training_out_dir / f"ckpt_epoch-{epoch+1}_valF1-{val_metrics['f1_macro']:.4f}.pt"
         log_path = ckpt_path.parent / f"{ckpt_path.stem}.json"
         torch.save({
             'epoch': epoch + 1,
