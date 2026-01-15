@@ -4,17 +4,22 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 import _bootstrap
-from training_utils.data_reduction.omp import OrthogonalMP_REG_Parallel_V1
 from configs.data_reduction_config import dr_config
+from configs.path_config import path_config
+from training_utils.data_reduction.omp import OrthogonalMP_REG_Parallel_V1
+from training_utils.data_reduction.metrics import omp_diagnostics
+from training_utils.data_reduction.plotting import plot_projection_sorted, plot_singleton_quality
 
 
 class GradMatchPBSelector:
-    def __init__(self, model, criterion, device, lam=0.0, eps=1e-4):
+    def __init__(self, model, criterion, device, lam=0.0, eps=1e-4, strategy='gradmatch'):
         self.model = model
         self.criterion = criterion
         self.device = device
         self.lam = lam
         self.eps = eps
+        self.strategy = strategy
+        self.epoch = 0
 
     def _batch_grad_head(self, imgs, labels):
         """
@@ -41,13 +46,77 @@ class GradMatchPBSelector:
         return g.float()
 
     def _is_subset_epoch(self, epoch, total_epochs):
+        self.epoch = epoch
         return (
             (epoch <= total_epochs) and  # if we haven't trained for the full spec'd num epochs and,
             (epoch >= dr_config.num_warm_start_epochs) and  # if we have trained enough on the full data and,
             (epoch % dr_config.epoch_selection_interval == 0)  # we are at a selection interval epoch,
         )
 
-    def select_perbatch(self, selection_loader, subset_ratio, positive=True):
+    def select_perbatch(self, selection_loader, subset_ratio, **kwargs):
+        strategy_fn = {
+            "gradmatch": self.gradmatch_select,
+            "random": self.random_select,
+        }.get(self.strategy)
+    
+        if strategy_fn is None:
+            raise ValueError(f"Error: Data reduction strategy should be either 'gradmatch' or 'random'; Found: {self.strategy}")
+
+        return strategy_fn(selection_loader, subset_ratio, **kwargs)
+
+    def random_select(self, selection_loader, subset_ratio, positive=True, save_plots=False):
+        """
+        Random per-batch selection baseline.
+
+        Returns exactly the same objects as select_perbatch():
+            chosen_subset_indices : list[int]   (subset indices into selection_loader.dataset)
+            sample_weight_map     : dict[int -> float]  (base_ds_idx -> weight)
+            diag                  : dict
+        """
+        assert 0 < subset_ratio <= 1.0
+
+        # deterministic batch structure (same as GradMatchPB)
+        batch_wise_indices = list(selection_loader.batch_sampler)
+        n_batches = len(batch_wise_indices)
+        k_batches = max(1, int(math.ceil(subset_ratio * n_batches)))
+
+        # --- randomly select batches ---
+        chosen_batch_ids = random.sample(range(n_batches), k_batches)
+
+        sel_subset = selection_loader.dataset
+        base_indices = sel_subset.indices  # subset_idx -> base_ds_idx
+
+        chosen_subset_indices = []
+        sample_weight_map = {}
+
+        for bid in tqdm(
+            chosen_batch_ids,
+            desc=f"RandomPB: expanding {k_batches} batches -> samples",
+            dynamic_ncols=True,
+        ):
+            subset_batch_idxs = batch_wise_indices[bid]
+            chosen_subset_indices.extend(subset_batch_idxs)
+
+            # uniform weight (baseline)
+            for sub_i in subset_batch_idxs:
+                base_i = int(base_indices[int(sub_i)])
+                sample_weight_map[base_i] = 1.0
+
+        diag = {
+            "method": "random_perbatch",
+            "n_batches_total": n_batches,
+            "k_batches": k_batches,
+            "reg_nnz": k_batches,                     # analogous to nnz
+            "n_points_selected": len(chosen_subset_indices),
+            "subset_ratio": subset_ratio,
+        }
+
+        # match GradMatch behavior: attach as attribute
+        self.last_omp_diag = diag
+
+        return chosen_subset_indices, sample_weight_map, diag
+
+    def gradmatch_select(self, selection_loader, subset_ratio, positive=True, save_plots=False):
         """This returns chosen_subset_indices relative to selection_loader.dataset (which is the train split)
 
         Returns:
@@ -116,7 +185,18 @@ class GradMatchPBSelector:
             "reg_nnz": len(chosen_batch_ids),
             "n_points_selected": len(chosen_subset_indices),
             "subset_ratio": subset_ratio,
+            **omp_diagnostics(A, b, reg, k=k_batches, positive=positive)
         }
+
+        # visuals for omp
+        if save_plots:
+            plot_fp = path_config.training_ckpt_dir / 'metrics'
+            plot_projection_sorted(diag['proj_vals'], plot_fp, epoch=self.epoch, title_prefix="OMP")
+            plot_singleton_quality(
+                diag['topk_cos'], diag['topk_res_ratio'], 
+                diag['bottomk_cos'], diag['bottomk_res_ratio'],
+                plot_fp, epoch=self.epoch
+            )
 
         return chosen_subset_indices, sample_weight_map, diag
 

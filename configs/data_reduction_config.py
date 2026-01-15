@@ -9,7 +9,7 @@ from utils.config_utils import parse_config_args
 class DataReductionConfig:
     seed: Optional[int] = None
 
-    data_reduction_method: Optional[str] = None
+    strategy: Optional[str] = 'gradmatch'           # options are ['gradmatch', 'random']
     subset_ratio: Optional[float] = 0.5
     num_warm_start_epochs: int = 0                  # number of epochs to train on the full dataset before subsetting
     #subbatch_size: int = 32                         # set to 1 for per sample selection (set as low as possible before OMP takes too long)

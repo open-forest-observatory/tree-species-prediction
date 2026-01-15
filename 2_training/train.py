@@ -55,6 +55,7 @@ def train():
             device=device,
             lam=dr_config.omp_regularizer_strength,
             eps=1e-4,
+            strategy=dr_config.strategy
         )
 
     prev_sample_idxs, cur_batch_weights, omp_diag = None, None, None # for tracking each iteration's similarity and weights
@@ -82,7 +83,7 @@ def train():
             chosen_subset_indices, sample_weight_map, omp_diag = subset_selector.select_perbatch(
                 selection_loader=selection_loader,
                 subset_ratio=dr_config.subset_ratio,
-                positive=True,
+                positive=True, save_plots=True
             )
             # rebuild training loader on the selected indices training transforms
             train_loader = rebuild_train_loader(train_subset, chosen_subset_indices)
