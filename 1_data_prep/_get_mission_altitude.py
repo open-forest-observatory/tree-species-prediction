@@ -117,24 +117,13 @@ def get_camera_locations(camera_file):
 
 
 def main(camera_file, dtm_file, output_csv, verbose):
-
-    # Step 1: get camera locations
-    camera_set = MetashapeCameraSet(camera_file=camera_file, image_folder="")
-
-    camera_locations = []
-    for camera in camera_set.cameras:
-        location = camera.local_to_epsg_4978_transform @ camera.cam_to_world_transform
-        # Extract the first 3 values from the final column of the transformation matrix
-        points_in_ECEF = location[:3, 3]
-        camera_locations.append(Point(points_in_ECEF))
-
-    # Step 2: Create a gdf with the camera coords in earth-centered, earth-fixed frame
-    ECEF_cam_locations = gpd.GeoDataFrame(geometry=camera_locations, crs=4978)
+    # Parse the camera locations from the Metashape XML file
+    cam_locations = get_camera_locations(camera_file)
 
     with rio.open(dtm_file) as dtm:
         dtm_crs = dtm.crs
         # Project to the CRS of the DTM
-        DTM_crs_cam_locations = ECEF_cam_locations.to_crs(dtm_crs)
+        DTM_crs_cam_locations = cam_locations.to_crs(dtm_crs)
 
         # Step 3: Extract X, Y from projected points
         sample_coords = [(pt.x, pt.y) for pt in DTM_crs_cam_locations.geometry]
