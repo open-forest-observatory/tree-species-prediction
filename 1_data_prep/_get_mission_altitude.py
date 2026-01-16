@@ -1,11 +1,11 @@
 import argparse
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio as rio
 import shapely
-from shapely.geometry import Point
 import xml.etree.ElementTree as ET
 
 
@@ -210,26 +210,18 @@ def main(camera_file, dtm_file, output_csv, verbose):
     summary_df = pd.DataFrame([summary_row])
 
     # Ensure output directory exists and save the summary
-    ensure_containing_folder(output_csv)
+    Path(output_csv).parent.mkdir(parents=True, exist_ok=True)
     summary_df.to_csv(output_csv, index=False)
 
     print(f"Summary exported to {output_csv}")
 
 
-get_camera_locations(
-    "/ofo-share/argo-data/argo-output/species_project/0001_001435_001436/output/0001_001435_001436_cameras.xml"
-)
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Compute height above ground for cameras and export summary statistics."
     )
-    parser.add_argument(
-        "--camera-file", default=EXAMPLE_CAMERAS_FILENAME, help="Path to camera file"
-    )
-    parser.add_argument(
-        "--dtm-file", default=EXAMPLE_DTM_FILE, help="Path to DTM raster file"
-    )
+    parser.add_argument("--camera-file", help="Path to camera file")
+    parser.add_argument("--dtm-file", help="Path to DTM raster file")
     parser.add_argument(
         "--output-csv",
         default="altitude_summary.csv",
