@@ -4,10 +4,116 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio as rio
-from geograypher.cameras import MetashapeCameraSet
-from geograypher.constants import EXAMPLE_CAMERAS_FILENAME, EXAMPLE_DTM_FILE
-from geograypher.utils.files import ensure_containing_folder
+import shapely
 from shapely.geometry import Point
+import xml.etree.ElementTree as ET
+
+
+def make_4x4_transform(rotation_str: str, translation_str: str, scale_str: str = "1"):
+    """Convenience function to make a 4x4 matrix from the string format used by Metashape
+
+    Args:
+        rotation_str (str): Row major with 9 entries
+        translation_str (str): 3 entries
+        scale_str (str, optional): single value. Defaults to "1".
+
+    Returns:
+        np.ndarray: (4, 4) A homogenous transform mapping from cam to world
+    """
+    rotation_np = np.fromstring(rotation_str, sep=" ")
+    rotation_np = np.reshape(rotation_np, (3, 3))
+
+    if not np.isclose(np.linalg.det(rotation_np), 1.0, atol=1e-8, rtol=0):
+        raise ValueError(
+            f"Inproper rotation matrix with determinant {np.linalg.det(rotation_np)}"
+        )
+
+    translation_np = np.fromstring(translation_str, sep=" ")
+    scale = float(scale_str)
+    transform = np.eye(4)
+    transform[:3, :3] = rotation_np * scale
+    transform[:3, 3] = translation_np
+    return transform
+
+
+def parse_transform_metashape(camera_file):
+    tree = ET.parse(camera_file)
+    root = tree.getroot()
+    # first level
+    components = root.find("chunk").find("components")
+
+    assert len(components) == 1
+    transform = components.find("component").find("transform")
+    if transform is None:
+        return None
+
+    rotation = transform.find("rotation").text
+    translation = transform.find("translation").text
+    scale = transform.find("scale").text
+
+    local_to_epgs_4978_transform = make_4x4_transform(rotation, translation, scale)
+
+    return local_to_epgs_4978_transform
+
+
+def get_camera_locations(camera_file):
+    """
+    Parse camera locations from a Metashape XML file into a GeoDataFrame.
+
+    Args:
+        camera_file (str): Path to the Metashape .xml export file.
+
+    Returns:
+        gpd.GeoDataFrame: GeoDataFrame with camera locations as Point geometries in EPSG:4978 (ECEF),
+                          with a 'label' column for camera labels.
+    """
+    # Load and parse the XML file
+    tree = ET.parse(camera_file)
+    cameras = tree.getroot().find("chunk").find("cameras")
+
+    # Some cameras are stored in groups, so we need to flatten the structure
+    ungrouped_cameras = []
+    for cam_or_group in cameras:
+        if cam_or_group.tag == "group":
+            for cam in cam_or_group:
+                ungrouped_cameras.append(cam)
+        else:
+            ungrouped_cameras.append(cam_or_group)
+
+    # Collect camera-to-world transforms
+    camera_locations_local = []
+    camera_labels = []
+
+    for cam in ungrouped_cameras:
+        transform = cam.find("transform")
+        if transform is None:
+            continue
+
+        location = np.fromstring(transform.text, sep=" ").reshape(4, 4)[:, 3:]
+
+        camera_labels.append(cam.get("label"))
+        camera_locations_local.append(location)
+
+    camera_locations_local = np.concatenate(camera_locations_local, axis=1)
+
+    # Get the transform from chunk to EPSG:4978
+    chunk_to_epsg4978 = parse_transform_metashape(camera_file)
+
+    if chunk_to_epsg4978 is None:
+        raise ValueError("Chunk is not georeferenced")
+
+    camera_locations_epsg4978 = chunk_to_epsg4978 @ camera_locations_local
+
+    # Create GeoDataFrame with point geometries using the first three rows as x, y, z coordinates
+    points = shapely.points(
+        camera_locations_epsg4978[0, :],
+        camera_locations_epsg4978[1, :],
+        camera_locations_epsg4978[2, :],
+    )
+    gdf = gpd.GeoDataFrame({"label": camera_labels}, geometry=points, crs="EPSG:4978")
+    # Transform to lat/lon
+    gdf.to_crs(4326, inplace=True)
+    return gdf
 
 
 def main(camera_file, dtm_file, output_csv, verbose):
@@ -120,6 +226,10 @@ def main(camera_file, dtm_file, output_csv, verbose):
 
     print(f"Summary exported to {output_csv}")
 
+
+get_camera_locations(
+    "/ofo-share/argo-data/argo-output/species_project/0001_001435_001436/output/0001_001435_001436_cameras.xml"
+)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
