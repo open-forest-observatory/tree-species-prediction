@@ -1,4 +1,5 @@
 import argparse
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import geopandas as gpd
@@ -6,7 +7,6 @@ import numpy as np
 import pandas as pd
 import rasterio as rio
 import shapely
-import xml.etree.ElementTree as ET
 
 
 def make_4x4_transform(rotation_str: str, translation_str: str, scale_str: str = "1"):
