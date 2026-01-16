@@ -36,7 +36,17 @@ def make_4x4_transform(rotation_str: str, translation_str: str, scale_str: str =
     return transform
 
 
-def parse_transform_metashape(camera_file):
+def parse_transform_metashape(camera_file: str):
+    """
+    Return the transform from local coordinates to the earth centered, earth fixed frame, EPSG:4978.
+    This is encoded in the XML file exported from Metashape.
+
+    Args:
+        camera_file (str): Path to the Metashape .xml export file.
+
+    Returns:
+        np.ndarray: (4, 4) Transform matrix from local coordinates to EPSG:4978.
+    """
     tree = ET.parse(camera_file)
     root = tree.getroot()
     # first level
@@ -84,11 +94,15 @@ def get_camera_locations(camera_file):
     camera_locations_local = []
     camera_labels = []
 
+    # Extract the locations of each camera from the 4x4 transform matrix representing both the
+    # rotation and translation of the camera, in local chunk coordinates.
     for cam in ungrouped_cameras:
         transform = cam.find("transform")
+        # Skip un-aligned cameras
         if transform is None:
             continue
 
+        # Convert the string representation into a 4x4 numpy array and extract the translation column
         location = np.fromstring(transform.text, sep=" ").reshape(4, 4)[:, 3:]
 
         camera_labels.append(cam.get("label"))
@@ -102,6 +116,7 @@ def get_camera_locations(camera_file):
     if chunk_to_epsg4978 is None:
         raise ValueError("Chunk is not georeferenced")
 
+    # Convert the locations from the local chunk frame to EPSG:4978
     camera_locations_epsg4978 = chunk_to_epsg4978 @ camera_locations_local
 
     # Create GeoDataFrame with point geometries using the first three rows as x, y, z coordinates
@@ -110,10 +125,11 @@ def get_camera_locations(camera_file):
         camera_locations_epsg4978[1, :],
         camera_locations_epsg4978[2, :],
     )
-    gdf = gpd.GeoDataFrame({"label": camera_labels}, geometry=points, crs="EPSG:4978")
-    # Transform to lat/lon
-    gdf.to_crs(4326, inplace=True)
-    return gdf
+    points_gdf = gpd.GeoDataFrame(
+        {"label": camera_labels}, geometry=points, crs="EPSG:4978"
+    )
+
+    return points_gdf
 
 
 def main(camera_file, dtm_file, output_csv, verbose):
