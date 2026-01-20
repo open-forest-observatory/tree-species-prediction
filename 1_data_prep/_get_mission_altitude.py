@@ -132,10 +132,7 @@ def get_camera_locations(camera_file):
     return points_gdf
 
 
-def main(camera_file, dtm_file, output_csv, verbose):
-    # Parse the camera locations from the Metashape XML file
-    cam_locations = get_camera_locations(camera_file)
-
+def compute_height_above_ground(cam_locations, dtm_file):
     with rio.open(dtm_file) as dtm:
         dtm_crs = dtm.crs
         # Project to the CRS of the DTM
@@ -147,11 +144,26 @@ def main(camera_file, dtm_file, output_csv, verbose):
         # Step 4: Sample DTM at these coordinates with masking
         elevations = list(dtm.sample(sample_coords, masked=True))
 
+    camera_elevations = DTM_crs_cam_locations.copy()
+    camera_elevations["ground_elevation"] = [
+        elev.data[0] if not elev.mask[0] else np.nan for elev in elevations
+    ]
+    camera_elevations["valid"] = [not elev.mask[0] for elev in elevations]
+    camera_elevations["altitude_agl"] = (
+        camera_elevations.geometry.z - camera_elevations["ground_elevation"]
+    )
+
+    return camera_elevations
+
+
+def compute_summary(camera_file, dtm_file, verbose):
+    # Parse the camera locations from the Metashape XML file
+    cam_locations = get_camera_locations(camera_file)
+    camera_elevations = compute_height_above_ground(cam_locations, dtm_file)
+
     # Verify if at least 90% of the camera points are within the DTM
-    num_total = len(elevations)
-    num_valid = sum(
-        not elev.mask[0] for elev in elevations
-    )  # mask value is True for no data
+    num_total = len(camera_elevations)
+    num_valid = camera_elevations["valid"].sum()
 
     valid_ratio = num_valid / num_total
 
@@ -163,26 +175,14 @@ def main(camera_file, dtm_file, output_csv, verbose):
         )
 
     # Step 5: Process elevations and calculate height above ground
-    heights_above_ground = []
-    ground_elevations = []
-    camera_elevations = []
-
-    for cam_pt, elev in zip(DTM_crs_cam_locations.geometry, elevations):
-        # Skip no-data points
-        if elev.mask[0] == True:
-            continue
-        # Index 0 because each sampled elevation is a 1 element masked array
-        ground_height = elev.data[0]
-        cam_height = cam_pt.z
-        # Record the difference in heights as the altitude
-        heights_above_ground.append(cam_height - ground_height)
-        ground_elevations.append(ground_height)
-        camera_elevations.append(cam_height)
-
-    # Step 6: Compute summary statistics
-    heights_np = np.array(heights_above_ground)
-    ground_np = np.array(ground_elevations)
-    camera_np = np.array(camera_elevations)
+    # Get the valid (within DSM) samples as numpy arrays
+    heights_np = camera_elevations.loc[
+        camera_elevations["valid"], "altitude_agl"
+    ].values
+    ground_np = camera_elevations.loc[
+        camera_elevations["valid"], "ground_elevation"
+    ].values
+    camera_np = camera_elevations.loc[camera_elevations["valid"]].geometry.z.values
 
     cv = np.std(heights_np) / np.mean(heights_np)
     correlation = np.corrcoef(ground_np, camera_np)[
@@ -221,6 +221,11 @@ def main(camera_file, dtm_file, output_csv, verbose):
         "flight_terrain_correlation_photogrammetry": correlation,
         "sd_photogrammetry_altitude": sd_photogrammetry_altitude,
     }
+    return summary_row
+
+
+def main(camera_file, dtm_file, output_csv, verbose):
+    summary_row = compute_summary(camera_file, dtm_file, verbose)
 
     # Convert to DataFrame and export as CSV
     summary_df = pd.DataFrame([summary_row])

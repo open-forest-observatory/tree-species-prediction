@@ -34,7 +34,7 @@ class PathConfig:
     )
 
     # Path to parent remote folder with all missions
-    all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_02"
+    all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_01"
 
     # Intermediate
     intermediate_data_folder: Path = Path(data_root_folder, "intermediate")
