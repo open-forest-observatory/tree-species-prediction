@@ -8,15 +8,18 @@ from configs.path_config import path_config
 from metashape_workflow_functions import make_derived_yaml  # isort: skip
 
 METASHAPE_CONFIG = Path(
-    path_config.automate_metashape_path, "config", "config-base.yml"
+    path_config.automate_metashape_path, "config", "config-example.yml"
 )
 
 
 def produce_combined_config(imagery_folder: Path):
     # Extract the last part of the path, which is the "<plot_id>_<nadir_id>_<oblique_id>" string
     run_name = imagery_folder.name
-
-    plot_id, nadir_id, oblique_id = run_name.split("_")
+    try:
+        plot_id, nadir_id, oblique_id = run_name.split("_")
+    except:
+        print(f"Couldn't parse run_name {run_name}")
+        return
 
     # Read data with the csv module to avoid additional dependencies
     with open(path_config.drone_mission_altitudes_per_plot_file, "r") as f:
@@ -34,9 +37,15 @@ def produce_combined_config(imagery_folder: Path):
         )
     ]
     if len(matching_row) != 1:
-        raise ValueError(
+        print(
             f"Only one row should have been found, instead: {matching_row}"
+            + f". For plot_id={plot_id}, nadir_id={nadir_id}, oblique_id={oblique_id}"
         )
+        return
+
+    if not matching_row[0][3] or not matching_row[0][4]:
+        print("Invalid altitude")
+        return
 
     # Extract the average altitudes and compute the difference between them
     nadir_average_alt = float(matching_row[0][3])
@@ -54,21 +63,32 @@ def produce_combined_config(imagery_folder: Path):
     # nadir images
     nadir_sub_missions = list(nadir_dataset_path.glob("*"))
     oblique_sub_missions = list(oblique_dataset_path.glob("*"))
-    sub_missions = nadir_sub_missions + oblique_sub_missions
 
     # When we run photogrammetry it's going to be within docker and the data will be mounted in a
     # volume. This will change the paths compared to what's on /ofo-share. This updates the input
     # folders so they are appropriate for docker.
-    sub_missions = [
+    nadir_sub_missions = [
         str(
             Path(
                 path_config.argo_imagery_path,
                 f.relative_to(path_config.paired_image_sets_for_photogrammetry),
             )
         )
-        for f in sub_missions
+        for f in nadir_sub_missions
         if f.is_dir()
     ]
+    oblique_sub_missions = [
+        str(
+            Path(
+                path_config.argo_imagery_path,
+                f.relative_to(path_config.paired_image_sets_for_photogrammetry),
+            )
+        )
+        for f in oblique_sub_missions
+        if f.is_dir()
+    ]
+    # Concatenate the two
+    sub_missions = nadir_sub_missions + oblique_sub_missions
 
     # This will tell metashape to shift the files such that the vertical offset between the
     # average altitude of oblique and nadir images matches the difference in heights above ground
@@ -87,8 +107,8 @@ def produce_combined_config(imagery_folder: Path):
     # Finally, the point clouds are removed from the project files to save space.
     override_dict = {
         "photo_path": sub_missions,
-        "buildOrthomosaic": {"surface": ["DSM-ptcloud"]},
-        "buildPointCloud": {"remove_after_export": True},
+        "build_orthomosaic": {"surface": ["DSM-ptcloud"]},
+        "build_point_cloud": {"remove_after_export": True},
         "add_photos": paired_offset,
     }
     # Where to save the config
