@@ -62,6 +62,11 @@ class PathConfig:
         preprocessing_folder, "list_of_missions_outside_dtm.txt"
     )
 
+    # Results of computing mission altitudes for individual plots
+    drone_mission_altitudes_per_plot_file: Path = Path(
+        intermediate_data_folder, "drone_mission_altitudes_per_plot.csv"
+    )
+
     # Inputs for 07_pair_drone_with_ground.py
     drone_missions_with_alt_file: Path = Path(
         preprocessing_folder, "ofo-all-missions-metadata-with-altitude.gpkg"
