@@ -1,7 +1,6 @@
 import csv
 from pathlib import Path
 
-
 import _bootstrap
 from configs.path_config import path_config
 
