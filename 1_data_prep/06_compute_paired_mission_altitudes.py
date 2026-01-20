@@ -1,12 +1,11 @@
-from pathlib import Path
-import tempfile
 import subprocess
-
-import _bootstrap
+import tempfile
+from pathlib import Path
 
 from _get_mission_altitude import compute_height_above_ground, get_camera_locations
-from configs.path_config import path_config
 
+import _bootstrap
+from configs.path_config import path_config
 
 METASHAPE_CONFIG = Path(
     path_config.automate_metashape_path, "config", "config-base.yml"

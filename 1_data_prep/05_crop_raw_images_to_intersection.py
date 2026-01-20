@@ -2,15 +2,14 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+from _get_mission_altitude import compute_height_above_ground, get_camera_locations
 from shapely.geometry import MultiPolygon
 from tqdm import tqdm
-
-from _get_mission_altitude import compute_height_above_ground, get_camera_locations
 
 import _bootstrap
 from configs.path_config import path_config
