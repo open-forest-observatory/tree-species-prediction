@@ -97,7 +97,7 @@ spec:
       affinity: {}
       # Use docker automate-metashape to do photogrammetry
       script:
-        image: ghcr.io/open-forest-observatory/automate-metashape:dy-error-exit-code
+        image: ghcr.io/open-forest-observatory/automate-metashape:main
         volumeMounts:
           - name: data
             mountPath: /data
@@ -118,15 +118,15 @@ spec:
 
           # Run the Metashape workflow
           python3 /app/python/metashape_workflow.py \
-            --config_file "/data/{{inputs.parameters.config-file}}" \
+            --config-file "/data/{{inputs.parameters.config-file}}" \
             --project-path "/data/argo-output/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-name}}/project" \
             --output-path "/data/argo-output/{{workflow.parameters.RUN_FOLDER}}/{{inputs.parameters.dataset-name}}/output" \
             --run-name "{{inputs.parameters.dataset-name}}"
         resources:
           requests:
-            nvidia.com/gpu: 1
+            nvidia.com/mig-1g.5gb: 1
           limits:
-            nvidia.com/gpu: 1
+            nvidia.com/mig-1g.5gb: 1
         env:
           - name: AGISOFT_FLS
             valueFrom:
