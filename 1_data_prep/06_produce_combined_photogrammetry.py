@@ -106,7 +106,7 @@ def produce_combined_config(imagery_folder: Path):
     # orthomosaic
     # Finally, the point clouds are removed from the project files to save space.
     override_dict = {
-        "photo_path": sub_missions,
+        "project": {"photo_path": sub_missions},
         "build_orthomosaic": {"surface": ["DSM-ptcloud"]},
         "build_point_cloud": {"remove_after_export": True},
         "add_photos": paired_offset,
