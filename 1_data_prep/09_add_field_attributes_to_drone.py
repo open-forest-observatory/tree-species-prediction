@@ -144,6 +144,7 @@ def match_trees_singlestratum(
         ax.add_collection(lc)
 
         plt.show()
+
     return matched_field_tree_inds, matched_drone_tree_inds
 
 
@@ -194,7 +195,7 @@ def match_field_and_drone_trees(
         ),  # Append these suffixes in cases of name collisions
     )
 
-    return drone_crowns_with_additional_attributes
+    return drone_crowns_with_additional_attributes, drone_trees
 
 
 def is_overstory(tree_dataset: gpd.GeoDataFrame):
@@ -278,6 +279,16 @@ def cleanup_field_trees(ground_reference_trees: gpd.GeoDataFrame) -> gpd.GeoData
     return ground_reference_trees
 
 
+def filter_by_live_and_height(tree_gdf, height_column="height"):
+    # Drop any dead trees. Note that there may be classes other than "L" (live) in the output
+    # but these are assumed to be live as well.
+    tree_gdf = tree_gdf.copy()[tree_gdf.live_dead != "D"]
+    # Drop any crowns that were less than 10m tall
+    tree_gdf = tree_gdf[tree_gdf[height_column] > 10]
+
+    return tree_gdf
+
+
 if __name__ == "__main__":
     # Load the spatial bounds of the field survey, for all plots
     ground_reference_plot_bounds = gpd.read_file(
@@ -310,6 +321,8 @@ if __name__ == "__main__":
 
     # Make the output folder
     Path(path_config.drone_crowns_with_field_attributes).mkdir(exist_ok=True)
+
+    stats = []
 
     for high_quality_dataset in high_quality_shift_datasets:
         # Extract which field plot this dataset corresponds to
@@ -350,7 +363,7 @@ if __name__ == "__main__":
             )
         ).to_crs(3310)
 
-        updated_drone_crowns = match_field_and_drone_trees(
+        updated_drone_crowns, drone_crowns_within_perim = match_field_and_drone_trees(
             field_trees=ground_trees,
             drone_trees=drone_trees,
             drone_crowns=drone_crowns,
@@ -359,15 +372,24 @@ if __name__ == "__main__":
 
         # Drop any crowns that were not matched
         updated_drone_crowns = updated_drone_crowns.dropna(subset=["species_code"])
-        # Drop any dead trees. Note that there may be classes other than "L" (live) in the output
-        # but these are assumed to be live as well.
-        updated_drone_crowns = updated_drone_crowns[
-            updated_drone_crowns.live_dead != "D"
-        ]
-        # Drop any crowns that were less than 10m tall
-        updated_drone_crowns = updated_drone_crowns[
-            updated_drone_crowns.height_field > 10
-        ]
+        # Remove short and dead trees
+        updated_drone_crowns = filter_by_live_and_height(
+            updated_drone_crowns, height_column="height_field"
+        )
+
+        report_stats = True
+
+        if report_stats:
+            drone_trees_live_tall = drone_crowns_within_perim[drone_crowns.height > 10]
+            ground_trees_live_tall = filter_by_live_and_height(ground_trees)
+
+            n_matched = len(updated_drone_crowns)
+            n_field = len(ground_trees_live_tall)
+            n_drone = len(drone_trees_live_tall)
+            stats.append((n_matched, n_field, n_drone))
+
+        # We have the number of successfully matched trees here
+        # Now we need to figure out the number of *filtered* trees in both sets
 
         # Only write out crowns if there are more than 10 trees remaining
         if len(updated_drone_crowns) >= 10:
@@ -377,3 +399,4 @@ if __name__ == "__main__":
                     high_quality_dataset + ".gpkg",
                 )
             )
+    stats = pd.DataFrame(stats, columns=["matched", "field", "drone"])
