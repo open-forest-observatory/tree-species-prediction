@@ -195,7 +195,7 @@ def match_field_and_drone_trees(
         ),  # Append these suffixes in cases of name collisions
     )
 
-    return drone_crowns_with_additional_attributes, drone_trees
+    return drone_crowns_with_additional_attributes
 
 
 def is_overstory(tree_dataset: gpd.GeoDataFrame):
@@ -363,7 +363,7 @@ if __name__ == "__main__":
             )
         ).to_crs(3310)
 
-        updated_drone_crowns, drone_crowns_within_perim = match_field_and_drone_trees(
+        updated_drone_crowns = match_field_and_drone_trees(
             field_trees=ground_trees,
             drone_trees=drone_trees,
             drone_crowns=drone_crowns,
@@ -380,6 +380,9 @@ if __name__ == "__main__":
         report_stats = True
 
         if report_stats:
+            drone_crowns_within_perim = drone_crowns[
+                drone_crowns.within(ground_plot_perim.geometry.values[0])
+            ]
             drone_trees_live_tall = drone_crowns_within_perim[drone_crowns.height > 10]
             ground_trees_live_tall = filter_by_live_and_height(ground_trees)
 
@@ -400,3 +403,6 @@ if __name__ == "__main__":
                 )
             )
     stats = pd.DataFrame(stats, columns=["matched", "field", "drone"])
+    stats.to_csv(
+        "/ofo-share/repos/david/tree-species-prediction/scratch/matching_stats.csv"
+    )
