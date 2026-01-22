@@ -84,8 +84,8 @@ def train():
         if subset_selector is not None and subset_selector._is_subset_epoch(epoch, model_config.epochs):
             chosen_subset_indices, sample_weight_map, omp_diag = subset_selector.select_perbatch(
                 selection_loader=selection_loader,
-                subset_ratio=dr_config.subset_ratio,
-                positive=True, save_plots=dr_config.save_plots, save_images=dr_config.save_n_omp_rated_imgs
+                subset_ratio=dr_config.subset_ratio, positive=True,
+                save_plots=dr_config.save_plots, save_images=dr_config.save_n_omp_rated_imgs
             )
             # rebuild training loader on the selected indices training transforms
             train_loader = rebuild_train_loader(train_subset, chosen_subset_indices)

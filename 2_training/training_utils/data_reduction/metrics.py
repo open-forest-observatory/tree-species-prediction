@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 
+from training_utils.ctx import vram_ctx
 
 def compute_pairwise_jaccard_similarity(s0, s1):
     # quantify how much new set s1 changed from old set s0
@@ -38,9 +39,9 @@ def _singleton_metrics(A, b, cols_idx):
     return cos.detach().cpu(), rr.detach().cpu()
 
 @torch.no_grad()
-def omp_diagnostics(A, b, reg, k, positive=False):
+def omp_diagnostics(A, b, reg, k, positive=False, epoch=None):
     """
-    Compute OMP-related diagnostics similar to your old implementation.
+    Compute OMP-related diagnostics; adapted from previous project.
 
     Args:
         A: (d, n) design matrix (atoms are columns)
@@ -57,55 +58,61 @@ def omp_diagnostics(A, b, reg, k, positive=False):
     n = A.shape[1]
 
     # projection distribution; p = A^T b
-    p = (A.t() @ b).detach() # (n,)
-    proj = p if positive else p.abs() 
+    with vram_ctx('DR-omp-metrics-projectiondist', epoch=epoch):
+        p = (A.t() @ b).detach() # (n,)
+        proj = p if positive else p.abs() 
 
     # top/bottom-k atoms by projection magnitude
-    kk = min(int(k), int(n))
-    sort_idx = torch.argsort(proj, descending=True)
-    topk_idx = sort_idx[:kk]
-    bottomk_idx = sort_idx[-kk:] if kk > 0 else sort_idx[:0]
+    with vram_ctx('DR-omp-metrics-projectiondistsorted', epoch=epoch):
+        kk = min(int(k), int(n))
+        sort_idx = torch.argsort(proj, descending=True)
+        topk_idx = sort_idx[:kk]
+        bottomk_idx = sort_idx[-kk:] if kk > 0 else sort_idx[:0]
 
-    topk_cos, topk_res_ratio = _singleton_metrics(A, b, topk_idx)
-    bottomk_cos, bottomk_res_ratio = _singleton_metrics(A, b, bottomk_idx)
+    with vram_ctx('DR-omp-metrics-_singleton_metrics-topk', epoch=epoch):
+        topk_cos, topk_res_ratio = _singleton_metrics(A, b, topk_idx)
+
+    with vram_ctx('DR-omp-metrics-_singleton_metrics-bottomk', epoch=epoch):
+        bottomk_cos, bottomk_res_ratio = _singleton_metrics(A, b, bottomk_idx)
 
     # chosen support from reg (nonzeros)
     support_idx = torch.nonzero(reg).view(-1)
     nnz = int(support_idx.numel())
 
     # subset reconstruction metrics (Ax vs b)
-    nb = float(b.norm() + eps)
-    if nnz > 0:
-        coeffs = reg[support_idx]                       # (nnz,)
-        Ax = A[:, support_idx] @ coeffs                 # (d,)
-        nax = float(Ax.norm() + eps)
-        residual_ratio = float((b - Ax).norm() / nb)
-        cos_sim = float((b @ Ax) / (nb * nax)) if nax > 0 else 0.0
-    else:
-        residual_ratio = 1.0
-        cos_sim = 0.0
+    with vram_ctx('DR-omp-metrics-subsetreconstruction', epoch=epoch):
+        nb = float(b.norm() + eps)
+        if nnz > 0:
+            coeffs = reg[support_idx]                       # (nnz,)
+            Ax = A[:, support_idx] @ coeffs                 # (d,)
+            nax = float(Ax.norm() + eps)
+            residual_ratio = float((b - Ax).norm() / nb)
+            cos_sim = float((b @ Ax) / (nb * nax)) if nax > 0 else 0.0
+        else:
+            residual_ratio = 1.0
+            cos_sim = 0.0
 
     # some useful scalar summaries of the projection distribution
     proj_cpu = proj.detach().float().cpu()
-    diagnostics = {
-        # --- keep key names from your old code where possible ---
-        "residual_ratio": residual_ratio,
-        "cos_sim": cos_sim,
+    with vram_ctx('DR-omp-metrics-diagdict', epoch=epoch):
+        diagnostics = {
+            "residual_ratio": residual_ratio,
+            "cos_sim": cos_sim,
 
-        "topk_cos": topk_cos.tolist(),                       # (k,)
-        "topk_res_ratio": topk_res_ratio.tolist(),           # (k,)
-        "bottomk_cos": bottomk_cos.tolist(),                 # (k,)
-        "bottomk_res_ratio": bottomk_res_ratio.tolist(),     # (k,)
+            "topk_cos": topk_cos.tolist(),                       # (k,)
+            "topk_res_ratio": topk_res_ratio.tolist(),           # (k,)
+            "bottomk_cos": bottomk_cos.tolist(),                 # (k,)
+            "bottomk_res_ratio": bottomk_res_ratio.tolist(),     # (k,)
 
-        "proj_vals": proj_cpu.tolist(),
-        "proj_mean": float(proj_cpu.mean().item()) if proj_cpu.numel() else 0.0,
-        "proj_std": float(proj_cpu.std(unbiased=False).item()) if proj_cpu.numel() else 0.0,
-        "proj_max": float(proj_cpu.max().item()) if proj_cpu.numel() else 0.0,
-        "proj_min": float(proj_cpu.min().item()) if proj_cpu.numel() else 0.0,
+            "proj_vals": proj_cpu.tolist(),
+            "proj_mean": float(proj_cpu.mean().item()) if proj_cpu.numel() else 0.0,
+            "proj_std": float(proj_cpu.std(unbiased=False).item()) if proj_cpu.numel() else 0.0,
+            "proj_max": float(proj_cpu.max().item()) if proj_cpu.numel() else 0.0,
+            "proj_min": float(proj_cpu.min().item()) if proj_cpu.numel() else 0.0,
 
-        "n_atoms": int(n),
-        "k": int(k),
-        "reg_nnz": nnz,
-    }
+            "n_atoms": int(n),
+            "k": int(k),
+            "reg_nnz": nnz,
+        }
 
     return diagnostics

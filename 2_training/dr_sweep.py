@@ -2,18 +2,15 @@ import subprocess
 import itertools
 from datetime import datetime
 
-# -----------------------
 # Experiment grid
-# -----------------------
-SUBSET_RATIOS = [0.1, 0.25, 0.5]
+SUBSET_RATIOS = [0.1, 0.25, 0.5, 1.0]
 METHODS = ["gradmatch", "random"]
-EPOCHS = 10                   # default training epochs
+EPOCHS = 10
 #MAX_SAMPLES = 5_000
 MAX_SAMPLES = 100_000
 
-# any extra args you want to globally enforce
-COMMON_ARGS = {
-    "--use_data_reduction": True,
+# args not pertaining to data reduction
+BASE_ARGS = {
     "--epochs": EPOCHS,
     "--max_class_imbalance_factor": 0,
     "--min_samples_per_class": 500,
@@ -27,12 +24,13 @@ def run_experiment(method, ratio):
 
     cmd = [
         "python", "train.py",
+        "--use_data_reduction" if ratio != 1.0 else "",
         "--strategy", method,
         "--subset_ratio", str(ratio),
         "--ckpt_dir_tag", tag,
     ]
 
-    for k, v in COMMON_ARGS.items():
+    for k, v in BASE_ARGS.items():
         cmd.append(k)
         if v is not None:
             cmd.append(str(v))

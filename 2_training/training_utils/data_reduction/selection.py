@@ -11,6 +11,7 @@ import _bootstrap
 from configs.data_reduction_config import dr_config
 from configs.path_config import path_config
 from training_utils.image_processing import unnormalize
+from training_utils.ctx import vram_ctx
 from training_utils.data_reduction.omp import OrthogonalMP_REG_Parallel_V1
 from training_utils.data_reduction.metrics import omp_diagnostics, compute_pairwise_jaccard_similarity
 from training_utils.data_reduction.plotting import plot_projection_sorted, plot_singleton_quality
@@ -48,7 +49,7 @@ class GradMatchPBSelector:
             raise RuntimeError("No trainable classifier_head params found for selection.")
 
         logits = self.model(imgs)
-        loss = self.criterion(logits, labels)  # mean CE by default
+        loss = self.criterion(logits, labels)
 
         grads = torch.autograd.grad(
             loss,
@@ -98,7 +99,7 @@ class GradMatchPBSelector:
         k_batches = max(1, int(math.ceil(subset_ratio * n_batches)))
 
         # randomly select batches 
-        chosen_batch_ids = random.sample(range(n_batches), k_batches)
+        chosen_batch_ids = np.random.default_rng().choice(range(n_batches), k_batches)
 
         sel_subset = selection_loader.dataset
         base_indices = sel_subset.indices  # subset_idx -> base_ds_idx
@@ -155,25 +156,28 @@ class GradMatchPBSelector:
             leave=True,
             dynamic_ncols=True,
         )
-        for imgs, labels, _metas in grad_pbar:
-            imgs, labels = imgs.to(self.device, non_blocking=True), labels.to(self.device, non_blocking=True)
-            g_b = self._batch_grad_head(imgs, labels)
-            grad_list.append(g_b)
+        for batch_idx, (imgs, labels, _metas) in enumerate(grad_pbar):
+            with vram_ctx('DR-FORWARD', step=batch_idx, epoch=self.epoch):
+                imgs, labels = imgs.to(self.device, non_blocking=True), labels.to(self.device, non_blocking=True)
+                g_b = self._batch_grad_head(imgs, labels)
+                grad_list.append(g_b)
 
-        grads_per_batch = torch.stack(grad_list, dim=0)          # (n_batches, d)
-        A = grads_per_batch.transpose(0, 1).contiguous()         # (d, n_batches)
-        b = grads_per_batch.sum(dim=0).contiguous()              # (d,)
+        with vram_ctx('DR-assemble-gradmat', epoch=self.epoch):
+            grads_per_batch = torch.stack(grad_list, dim=0)          # (n_batches, d)
+            A = grads_per_batch.transpose(0, 1).contiguous()         # (d, n_batches)
+            b = grads_per_batch.sum(dim=0).contiguous()              # (d,)
 
         # OMP on GPU
         print(f"Gradient Matrix shape: {A.shape} (n_class_head_params x n_batches)")
-        reg = OrthogonalMP_REG_Parallel_V1(
-            A, b,
-            nnz=k_batches,
-            positive=positive,
-            lam=self.lam,
-            tol=self.eps,
-            device=str(self.device),
-        )  # (n_batches,)
+        with vram_ctx('DR-omp', epoch=self.epoch):
+            reg = OrthogonalMP_REG_Parallel_V1(
+                A, b,
+                nnz=k_batches,
+                positive=positive,
+                lam=self.lam,
+                tol=self.eps,
+                device=str(self.device),
+            )  # (n_batches,)
 
         chosen_batch_ids = torch.nonzero(reg).view(-1).tolist()
 
@@ -187,7 +191,6 @@ class GradMatchPBSelector:
         for bid in gradmatch_pbar:
             gamma = float(reg[bid].item())
             subset_batch_idxs = batch_wise_indices[bid]  # subset indices into sel_subset
-
             chosen_subset_indices.extend(subset_batch_idxs)
 
             # key weights by BASE dataset index (stable across any future Subset nesting)
@@ -195,13 +198,15 @@ class GradMatchPBSelector:
                 base_i = int(base_indices[sub_i])
                 sample_weight_map[base_i] = gamma
 
+        # Note: more vram logging in training_utils.data_reduction.metrics.omp_diagnostics()
+        extended_omp_diag = omp_diagnostics(A, b, reg, k=k_batches, positive=positive, epoch=self.epoch)
         diag = {
             "n_batches_total": n_batches,
             "k_batches": k_batches,
             "reg_nnz": len(chosen_batch_ids),
             "n_points_selected": len(chosen_subset_indices),
             "subset_ratio": subset_ratio,
-            **omp_diagnostics(A, b, reg, k=k_batches, positive=positive)
+            **extended_omp_diag,
         }
 
         # visuals for omp
