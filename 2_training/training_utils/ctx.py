@@ -68,7 +68,7 @@ def vram_ctx(
         row = {
             "timestamp": datetime.utcnow().isoformat(),
             "tag": tag,
-            "epoch": self.epoch,
+            "epoch": epoch,
             "step": step,
             "is_oom": is_oom,
             "alloc_mb_before": alloc_before / 1024**2,

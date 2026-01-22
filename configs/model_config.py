@@ -3,8 +3,11 @@ from pathlib import Path
 import os
 from dataclasses import dataclass
 from typing import Optional, Literal, Union
+from datetime import datetime
 
+from configs.path_config import path_config
 from utils.config_utils import parse_config_args, register_yaml_str_representers
+from training_utils.device_utils import get_num_workers, get_device
 
 @dataclass
 class TreeModelConfig:
@@ -30,11 +33,11 @@ class TreeModelConfig:
     val_ratio: float = 0.2                      # ratio of data to use for validation set; ignored if `data_split_level == 'plot'`
     downsample_threshold: int = 574             # if longer edge of input img > this, downsample instead of just crop
     downsample_to: int = 518                    # size to downsample long edge too before padding
-    num_workers: Union[int,str] = 'auto'        # workers for the dataloader; 'auto' sets num workers to half the current CPU core count
+    num_workers: Union[int,str] = 'auto'        # workers for the dataloader; 'auto' sets num workers to the current CPU core count
     max_class_imbalance_factor: float = 0       # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
     min_samples_per_class: int = 500            # 0 -> no limit; exclude classes with fewer than this num samples
-    max_total_samples: int = 500              # for testing purposes, randomly subsample images up to this amount;
+    max_total_samples: int = 500                # for testing purposes, randomly subsample images up to this amount;
                                                 # set to 0 to have no upper limit
     use_class_balancing: bool = True            # use weighted random sampler to balance classes during training
     
@@ -60,7 +63,7 @@ class TreeModelConfig:
                                                 # set to 0 for no intermediate layer
 
     # optimizations
-    n_last_layers_to_unfreeze: int = 4          # unfreezing all layers causes OOM errors, choose how many of the last layers to make tunable
+    n_last_layers_to_unfreeze: int = 0          # unfreezing all layers causes OOM errors, choose how many of the last layers to make tunable
     layer_unfreeze_step: int = 2                # each epoch how many layers to unfreeze UP TO `n_last_layers_to_unfreeze`
     use_amp: bool = True                        # automated mixed precision
     amp_dtype: torch.dtype = torch.float16      # dtype for amp scaling
@@ -75,12 +78,20 @@ class TreeModelConfig:
     objective: Literal ['max', 'min'] = 'max'   # dictates to stopper whether 'best' means higher or lower
 
     # misc
+    device: str = 'auto'                        # ['cuda:i', 'cpu', 'auto'] -> auto will default to cuda if detected, 
+                                                # and if multiple gpus will chose the one with most free vram
     seed: int = 24                              # seed to maintain reproducibility within rng
     ckpt_dir_tag: str = ''                      # ckpt dirs are just date and time, use this for a more helpful training identifier
-
+    will_log_vram: bool = False                 # log vram usage at key cuda operations to track memory use
+                                                # helpful for debugging cuda oom errors
+    # dir where logs and ckpts are saved for this specific training run
+    cur_training_out_dir = ""
 
 model_config, model_args = parse_config_args(TreeModelConfig)
-if model_config.num_workers == 'auto':
-    model_config.num_workers = os.cpu_count()
+model_config.num_workers = get_num_workers() if model_config.num_workers == 'auto' else model_config.num_workers
+model_config.device = get_device(verbose=1) if model_config.device == 'auto' else model_config.device
+if not model_config.cur_training_out_dir:
+    model_config.cur_training_out_dir = path_config.training_ckpt_dir / f"{datetime.now().strftime('%m%d-%H%M%S')}-{model_config.ckpt_dir_tag}"
+model_config.cur_training_out_dir.mkdir(parents=True)
 
 register_yaml_str_representers(torch.dtype) # YAML dump doesn't natively know what to do with torch types

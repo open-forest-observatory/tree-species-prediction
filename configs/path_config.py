@@ -100,11 +100,11 @@ class PathConfig:
 
     # output of model trainings
     # temporarily relative path until testing complete
-    training_ckpt_dir: Path = Path("ckpts")
+    training_ckpt_dir: Path = Path("ckpts").resolve()
 
     # cache of static image transformations (resizing to input dim)
     # kept local to not interfere with others' runs
-    static_transformed_images_cache_dir: Path = Path("cache")
+    static_transformed_images_cache_dir: Path = Path("cache").resolve()
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
