@@ -12,6 +12,23 @@ METASHAPE_CONFIG = Path(
 )
 
 
+def correct_pathing(sub_mission_paths):
+    """
+    Update the paths so they refer to the data as seen inside the container and ensure only
+    directories are present.
+    """
+    return [
+        str(
+            Path(
+                path_config.argo_imagery_path,
+                f.relative_to(path_config.paired_image_sets_for_photogrammetry),
+            )
+        )
+        for f in sub_mission_paths
+        if f.is_dir()
+    ]
+
+
 def produce_combined_config(imagery_folder: Path):
     # Extract the last part of the path, which is the "<plot_id>_<nadir_id>_<oblique_id>" string
     run_name = imagery_folder.name
@@ -67,26 +84,9 @@ def produce_combined_config(imagery_folder: Path):
     # When we run photogrammetry it's going to be within docker and the data will be mounted in a
     # volume. This will change the paths compared to what's on /ofo-share. This updates the input
     # folders so they are appropriate for docker.
-    nadir_sub_missions = [
-        str(
-            Path(
-                path_config.argo_imagery_path,
-                f.relative_to(path_config.paired_image_sets_for_photogrammetry),
-            )
-        )
-        for f in nadir_sub_missions
-        if f.is_dir()
-    ]
-    oblique_sub_missions = [
-        str(
-            Path(
-                path_config.argo_imagery_path,
-                f.relative_to(path_config.paired_image_sets_for_photogrammetry),
-            )
-        )
-        for f in oblique_sub_missions
-        if f.is_dir()
-    ]
+    nadir_sub_missions = correct_pathing(nadir_sub_missions)
+    oblique_sub_missions = correct_pathing(oblique_sub_missions)
+
     # Concatenate the two
     sub_missions = nadir_sub_missions + oblique_sub_missions
 
@@ -96,8 +96,8 @@ def produce_combined_config(imagery_folder: Path):
     paired_offset = {
         "apply_paired_altitude_offset": True,
         "paired_altitude_offset": diff,
-        "lower_offset_folders": [str(p) for p in oblique_sub_missions],
-        "upper_offset_folders": [str(p) for p in nadir_sub_missions],
+        "lower_offset_folders": oblique_sub_missions,
+        "upper_offset_folders": nadir_sub_missions,
     }
 
     # Build and override dict that will update the base config with the location of the input images.

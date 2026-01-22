@@ -110,7 +110,9 @@ def process_mission(mission_id, mission_type, parent_folder, combined_intersecti
     camera_local = Path(tmp_camera.name)
     dtm_local = Path(tmp_dtm.name)
 
+    # Extract the camera locations as estimated by photogrammetry
     cam_locations = get_camera_locations(camera_local)
+    # Subtract the photogrammetry-derived DTM altitude from the cameras
     camera_elevations = compute_height_above_ground(cam_locations, dtm_local)
 
     # Reformat the label of the cameras to match what's in the "filtered" dataframe
