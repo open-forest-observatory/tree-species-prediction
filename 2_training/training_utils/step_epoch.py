@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from configs.model_config import model_config
 from training_utils.metrics import update_tp_fp_fn, compute_epoch_metrics
+from training_utils.ctx import vram_ctx
 
 def _step_epoch(
         tree_model, dataloader, device, criterion,
@@ -39,48 +40,50 @@ def _step_epoch(
 
         # forward with optional automatic mixed precision
         with autocast(enabled=use_amp, device_type=str(device), dtype=model_config.amp_dtype):
-            logits = tree_model(imgs)
+            with vram_ctx('FORWARD', step=batch_idx, epoch=epoch_num):
+                logits = tree_model(imgs)
 
             # scale loss by weights given from OMP per batch importance
             if training and sample_weight_map is not None:
-                # per-sample loss
-                loss_vec = F.cross_entropy(logits, labels, reduction='none')  # (B,)
+                with vram_ctx('step_epoch() - Apply DR Sample Weight Mapping from', step=batch_idx, epoch=epoch_num):
+                    # per-sample loss
+                    loss_vec = F.cross_entropy(logits, labels, reduction='none')  # (B,)
 
-                # DEBUG: make sure samples indexed correctly from data
-                ids = [m['ds_idx'] for m in metas]
-                missing = [i for i in ids if i not in sample_weight_map]
-                if missing:
-                    raise KeyError(f"Missing {len(missing)}/{len(ids)} weights. Example missing ds_idx: {missing[:10]}")
+                    # DEBUG: make sure samples indexed correctly from data
+                    ids = [m['ds_idx'] for m in metas]
+                    missing = [i for i in ids if i not in sample_weight_map]
+                    if missing:
+                        raise KeyError(f"Missing {len(missing)}/{len(ids)} weights. Example missing ds_idx: {missing[:10]}")
 
+                    # weights lookup by global_idx
+                    w = torch.tensor(
+                        [sample_weight_map[int(m['ds_idx'])] for m in metas],
+                        device=labels.device,
+                        dtype=loss_vec.dtype,
+                    )  # (B,)
+                    # sanity checks
+                    assert torch.isfinite(w).all()
+                    assert (w >= 0).all()
 
-                # weights lookup by global_idx
-                w = torch.tensor(
-                    [sample_weight_map[int(m['ds_idx'])] for m in metas],
-                    device=labels.device,
-                    dtype=loss_vec.dtype,
-                )  # (B,)
-                # sanity checks
-                assert torch.isfinite(w).all()
-                assert (w >= 0).all()
+                    # normalize weights so loss scale stays comparable epoch-to-epoch
+                    #w = w / (w.mean() + 1e-12)
 
-                # normalize weights so loss scale stays comparable epoch-to-epoch
-                #w = w / (w.mean() + 1e-12)
-
-                loss = (loss_vec * w).mean()
+                    loss = (loss_vec * w).mean()
             else:
                 loss = criterion(logits, labels)
 
         if training:
             # zero previous gradients before backprop
             optim.zero_grad()
-            if scaler is not None:
-                # scale back to fp32 and then backprop
-                scaler.scale(loss).backward()
-                scaler.step(optim) # step down the gradient
-                scaler.update()
-            else:
-                loss.backward() # back propagation
-                optim.step() # step down the gradient
+            with vram_ctx('BACKWARD', step=batch_idx, epoch=epoch_num):
+                if scaler is not None:
+                    # scale back to fp32 and then backprop
+                    scaler.scale(loss).backward()
+                    scaler.step(optim) # step down the gradient
+                    scaler.update()
+                else:
+                    loss.backward() # back propagation
+                    optim.step() # step down the gradient
 
         # bunch of running metrics
         with torch.no_grad(): # don't track gradients just for metrics

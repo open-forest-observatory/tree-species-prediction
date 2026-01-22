@@ -73,4 +73,3 @@ def compute_epoch_metrics(running_loss, total, correct, tp, fp, fn, average="mac
         "f1": f1,
         "average": average,
     }
-

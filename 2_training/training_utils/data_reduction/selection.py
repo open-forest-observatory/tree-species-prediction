@@ -81,7 +81,7 @@ class GradMatchPBSelector:
 
         return strategy_fn(selection_loader, subset_ratio, **kwargs)
 
-    def random_select(self, selection_loader, subset_ratio, positive=True, save_plots=False):
+    def random_select(self, selection_loader, subset_ratio, positive=True, save_plots=False, save_images=0):
         """
         Random per-batch selection baseline.
 
@@ -97,7 +97,7 @@ class GradMatchPBSelector:
         n_batches = len(batch_wise_indices)
         k_batches = max(1, int(math.ceil(subset_ratio * n_batches)))
 
-        # --- randomly select batches ---
+        # randomly select batches 
         chosen_batch_ids = random.sample(range(n_batches), k_batches)
 
         sel_subset = selection_loader.dataset
@@ -128,7 +128,6 @@ class GradMatchPBSelector:
             "subset_ratio": subset_ratio,
         }
 
-        # match GradMatch behavior: attach as attribute
         self.last_omp_diag = diag
 
         return chosen_subset_indices, sample_weight_map, diag

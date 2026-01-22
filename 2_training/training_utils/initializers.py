@@ -46,8 +46,6 @@ def assemble_param_groups(tree_model):
     return list(groups.values()), groups
 
 def init_training():
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     tree_dset = TreeDataset( # init dataset
         imgs_root=path_config.cropped_tree_training_images / 'labelled',
         gpkg_dir=path_config.drone_crowns_with_field_attributes,
@@ -60,7 +58,7 @@ def init_training():
         backbone_name=model_config.backbone_name,
         num_classes=len(tree_dset.label2idx_map),
         backbone_is_trainable=False, # with already tuned backbone, we won't touch it at least to start (can further tune in later epochs)
-    ).to(device)
+    ).to(model_config.device)
 
     # img transforms to give to dataset class to standardize input imgs to the model's liking
     static_T, random_train_T, random_val_T = build_transforms(
@@ -100,8 +98,8 @@ def init_training():
     criterion = nn.CrossEntropyLoss() # loss fn
 
     # automated mixed precision -> allows for less important calculations with lower fp precision
-    enable_amp = model_config.use_amp and device == 'cuda'
-    scaler = GradScaler(enabled=enable_amp, device=device) if enable_amp else None
+    enable_amp = model_config.use_amp and model_config.device == 'cuda'
+    scaler = GradScaler(enabled=enable_amp, device=model_config.device) if enable_amp else None
 
     #for name, p in tree_model.named_parameters():
     #    print(f"{name:60s} | shape={tuple(p.shape)} | requires_grad={p.requires_grad}")
@@ -121,4 +119,4 @@ def init_training():
         scheduler = CosineAnnealingLR(optim, T_max=model_config.epochs)
 
     return tree_model, tree_dset, train_loader, val_loader, train_subset, val_subset, static_T, \
-    random_train_T, random_val_T, optim, criterion, scheduler, scaler, device, early_stopper
+    random_train_T, random_val_T, optim, criterion, scheduler, scaler, early_stopper
