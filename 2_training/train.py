@@ -22,7 +22,17 @@ from training_utils.data_reduction.selection import GradMatchPBSelector
 from training_utils.data_reduction.utils import make_selection_loader, rebuild_train_loader
 
 ''' TODO:
-- Run driver to train with dr on various ratios
+Implement:
+- configurable fc layers for classifier head
+
+Experiments:
+- train with dr on various ratios with no fine tuning of backbone on large but not all data
+    - give us an idea
+- same as above but with all data
+
+- train with dr at one ratio and full data to test n_classifier_layers
+- same as above but with tunable backbone weights
+
 '''
 
 def train():

@@ -49,7 +49,7 @@ class TreeModelConfig:
     epochs: int = 20                            # num passes through the training dataset
     warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
     freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
-    batch_size: int = 16                        # how many images processed per backprop/param update
+    batch_size: int = 8                         # how many images processed per backprop/param update
     
     # parameter stepping
     head_lr: float = 1e-3                       # learning rate: how big of a step to take down gradient when updating model params
@@ -61,6 +61,7 @@ class TreeModelConfig:
     backbone_name: str = "vit_base_patch14_reg4_dinov2.lvd142m"
     n_intermediate_fc_layer_neurons: int = 1024 # size of fc layer between input of backbone and output logits of classification head
                                                 # set to 0 for no intermediate layer
+    n_classifier_layers: int = 3                # TODO: implement additional layers
 
     # optimizations
     n_last_layers_to_unfreeze: int = 0          # unfreezing all layers causes OOM errors, choose how many of the last layers to make tunable
@@ -90,8 +91,12 @@ class TreeModelConfig:
 model_config, model_args = parse_config_args(TreeModelConfig)
 model_config.num_workers = get_num_workers() if model_config.num_workers == 'auto' else model_config.num_workers
 model_config.device = get_device(verbose=1) if model_config.device == 'auto' else model_config.device
+if not model_config.ckpt_dir_tag:
+    model_config.ckpt_dir_tag = f"{datetime.now().strftime('%m%d-%H%M%S')}"
+else:
+    model_config.ckpt_dir_tag = f"{datetime.now().strftime('%m%d-%H%M%S')}-{model_config.ckpt_dir_tag}"
 if not model_config.cur_training_out_dir:
-    model_config.cur_training_out_dir = path_config.training_ckpt_dir / f"{datetime.now().strftime('%m%d-%H%M%S')}-{model_config.ckpt_dir_tag}"
+    model_config.cur_training_out_dir = path_config.training_ckpt_dir / model_config.ckpt_dir_tag
 model_config.cur_training_out_dir.mkdir(parents=True)
 
 register_yaml_str_representers(torch.dtype) # YAML dump doesn't natively know what to do with torch types

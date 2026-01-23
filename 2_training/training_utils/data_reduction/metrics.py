@@ -16,26 +16,33 @@ def compute_pairwise_jaccard_similarity(s0, s1):
 
     return jaccard
 
-def _singleton_metrics(A, b, cols_idx):
+def _singleton_metrics(A, b, cols_idx, eps=1e-8):
     """
-    A: (d, n)
-    b: (d,)
-    cols_idx: 1D LongTensor of size (k,)
+    Finds quantifies each batches contribution to the target gradient
+    Note: these are vectorized operations to find indv batch contributions to the full gradient,
+    so while comments may indicate 'scalar', these fns all operate on vectors, it's just scalars if it were done iteratively.
+
+    Args: 
+        A: (d, n); gradient of loss wrt classifier head params (i.e. no base/pretrained model params)
+        b: (d,); target gradient; row sum of gradient matrix
+        cols_idx: 1D LongTensor of size (k,) (selected batches)
     Returns:
         cos: (k,) cosine between each atom a_j and b
         rr : (k,) residual ratio ||b - a_j * alpha|| / ||b||
     """
-    a = A[:, cols_idx]                                     # (d, k)
-    nb = b.norm() + 1e-12
-    na = a.norm(dim=0) + 1e-12                             # (k,)
-    cos = (a.t() @ b) / (na * nb)                          # (k,)
+    a = A[:, cols_idx]                              # (d, k); single column/atom from gradient matrix; 
+    nb = b.norm() + eps                             # (k,); scalar norm gradient sum 
+    sqna = (a.T @ a) + eps                          # (k,); squared norm of atom
+    na = sqna.sqrt()                                # (k,); scalar norm of singleton
+    inner_prod = (a.T @ b)                          # (k,); inner product of atom and tgt; raw directional alignment
+    cos = inner_prod / (na * nb)                    # (k,); cosine similarity between atom and target; norm inner product
 
-    numer = (a.t() @ b)                                    # (k,)
-    denom = (a.t() * a.t()).sum(dim=1) + 1e-12             # (k,) = ||a_j||^2
-    alpha = numer / denom                                  # (k,)
-
-    r = b.unsqueeze(1) - a * alpha.unsqueeze(0)            # (d, k)
-    rr = r.norm(dim=0) / nb                                # (k,)
+    # compute squared residual norm using the identity: ||b - alpha a_j||^2 = ||b||^2 - 2 alpha (a_j^T b) + alpha^2 ||a_j||^2
+    # this avoids explicitly forming the (d, k) residual matrix
+    alpha = (a.T @ b)                               # (k,); projection coeff of singleton gradient onto target
+    bTb = (b @ b) + eps
+    r2 = bTb - 2.0 * alpha * inner_prod + (alpha * alpha) * sqna
+    rr = r2.clamp_min(0.0).sqrt() / nb
     return cos.detach().cpu(), rr.detach().cpu()
 
 @torch.no_grad()
@@ -65,15 +72,14 @@ def omp_diagnostics(A, b, reg, k, positive=False, epoch=None):
     # top/bottom-k atoms by projection magnitude
     with vram_ctx('DR-omp-metrics-projectiondistsorted', epoch=epoch):
         kk = min(int(k), int(n))
-        sort_idx = torch.argsort(proj, descending=True)
-        topk_idx = sort_idx[:kk]
-        bottomk_idx = sort_idx[-kk:] if kk > 0 else sort_idx[:0]
+        _, topk_idx = torch.topk(proj, kk, largest=True)        # most informative batch idxs
+        _, bottomk_idx = torch.topk(proj, kk, largest=False)    # least informative batch idxs
 
     with vram_ctx('DR-omp-metrics-_singleton_metrics-topk', epoch=epoch):
-        topk_cos, topk_res_ratio = _singleton_metrics(A, b, topk_idx)
+        topk_cos, topk_res_ratio = _singleton_metrics(A, b, topk_idx) # how informative are each of the worst samples indv
 
     with vram_ctx('DR-omp-metrics-_singleton_metrics-bottomk', epoch=epoch):
-        bottomk_cos, bottomk_res_ratio = _singleton_metrics(A, b, bottomk_idx)
+        bottomk_cos, bottomk_res_ratio = _singleton_metrics(A, b, bottomk_idx) # how informative are each of the worst samples indv
 
     # chosen support from reg (nonzeros)
     support_idx = torch.nonzero(reg).view(-1)
@@ -99,10 +105,10 @@ def omp_diagnostics(A, b, reg, k, positive=False, epoch=None):
             "residual_ratio": residual_ratio,
             "cos_sim": cos_sim,
 
-            "topk_cos": topk_cos.tolist(),                       # (k,)
-            "topk_res_ratio": topk_res_ratio.tolist(),           # (k,)
-            "bottomk_cos": bottomk_cos.tolist(),                 # (k,)
-            "bottomk_res_ratio": bottomk_res_ratio.tolist(),     # (k,)
+            "topk_cos": topk_cos.tolist(),               
+            "topk_res_ratio": topk_res_ratio.tolist(),   
+            "bottomk_cos": bottomk_cos.tolist(),         
+            "bottomk_res_ratio": bottomk_res_ratio.tolist(), 
 
             "proj_vals": proj_cpu.tolist(),
             "proj_mean": float(proj_cpu.mean().item()) if proj_cpu.numel() else 0.0,

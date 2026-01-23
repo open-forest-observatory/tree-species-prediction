@@ -8,7 +8,7 @@ import traceback
 
 from configs.model_config import model_config
 from configs.path_config import path_config
-from training_utils.device_utils import get_device
+from training_utils.device_utils import get_device, _is_cuda_oom
 
 @contextmanager
 def vram_ctx(
