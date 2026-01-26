@@ -116,6 +116,9 @@ class PathConfig:
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
     cropped_tree_training_images = intermediate_data_folder / "cropped_trees"
 
+    # Live cropped trees after filtering out dead trees
+    live_cropped_trees = intermediate_data_folder / "cropped_trees_live"
+
     # Output of 14_prepare_mmpretrain_dataset.py
     mmpretrain_dataset_folder: Path = Path(
         intermediate_data_folder, "mmpretrain_dataset"
