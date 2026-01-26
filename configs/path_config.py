@@ -126,6 +126,12 @@ class PathConfig:
 
     withheld_plots_file: Path = Path(raw_folder, "withheld_ground_plot_ids_v1.csv")
 
+    # Folder to store model checkpoints and config files
+    model_output_folder: Path = Path(data_root_folder, "models")
+    
+    dead_live_model_checkpoint: Path = Path(model_output_folder, "dead_live_classifier_model.pth")
+    dead_live_model_config: Path = Path(model_output_folder, "dead_live_classifier_config.py")
+
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
         hints = get_type_hints(self.__class__)  # get types of class attributes
