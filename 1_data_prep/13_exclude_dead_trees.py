@@ -1,15 +1,15 @@
 import os
-import pandas as pd
-from pathlib import Path
 from collections import Counter, defaultdict
-from tqdm import tqdm
+from pathlib import Path
+
+import pandas as pd
 
 # Note: This script should be run with the `open-mmlab` environment activated
 from mmpretrain.apis import ImageClassificationInferencer
+from tqdm import tqdm
 
 import _bootstrap
 from configs.path_config import path_config
-from pathlib import Path
 
 INPUT_ROOT = path_config.cropped_tree_training_images / "labelled"
 OUTPUT_ROOT = path_config.live_cropped_trees
