@@ -34,7 +34,7 @@ class PathConfig:
     )
 
     # Path to parent remote folder with all missions
-    all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_02"
+    all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_01"
 
     # Intermediate
     intermediate_data_folder: Path = Path(data_root_folder, "intermediate")
@@ -60,6 +60,11 @@ class PathConfig:
     mission_altitudes_folder: Path = Path(preprocessing_folder, "mission_altitudes")
     missions_outside_dtm_list: Path = Path(
         preprocessing_folder, "list_of_missions_outside_dtm.txt"
+    )
+
+    # Results of computing mission altitudes for individual plots
+    drone_mission_altitudes_per_plot_file: Path = Path(
+        intermediate_data_folder, "drone_mission_altitudes_per_plot.csv"
     )
 
     # Inputs for 07_pair_drone_with_ground.py
