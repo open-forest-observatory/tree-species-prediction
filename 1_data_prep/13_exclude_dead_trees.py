@@ -26,10 +26,9 @@ IDX_TO_CLASS = {
 
 # Initialize the MMPretrain inferencer
 inferencer = ImageClassificationInferencer(
-    model=str(CONFIG_FILE),
-    pretrained=str(CHECKPOINT_FILE),
-    device=DEVICE
+    model=str(CONFIG_FILE), pretrained=str(CHECKPOINT_FILE), device=DEVICE
 )
+
 
 # Tree-level aggregation to get Dead/Live labels at the tree level based on majority vote
 def aggregate_tree_predictions(pred_labels):
@@ -76,7 +75,7 @@ if __name__ == "__main__":
         dead_tree_ids = []
         output_dataset_dir = OUTPUT_ROOT / dataset_name
 
-        # Iteration of trees yields (tree_id, tree_df) pairs where 
+        # Iteration of trees yields (tree_id, tree_df) pairs where
         # tree_id is the group key and tree_df is a DataFrame of rows for that tree.
         for tree_id, tree_df in tqdm(trees, desc=" Trees"):
 
@@ -90,13 +89,11 @@ if __name__ == "__main__":
                 ]
             else:
                 image_paths = [Path(p) for p in tree_df["image_path"]]
-            
+
             # Run inference on batched images of this tree
             results = inferencer(image_paths)
 
-            pred_labels = [
-                int(r["pred_label"]) for r in results
-            ]
+            pred_labels = [int(r["pred_label"]) for r in results]
 
             # Aggregate to get tree-level label
             tree_label = aggregate_tree_predictions(pred_labels)
@@ -124,8 +121,7 @@ if __name__ == "__main__":
             tree_df = tree_df.copy()
             # Update image paths to new location in live cropped trees folder
             tree_df["image_path"] = [
-                str(dst_tree_dir / Path(p).name)
-                for p in tree_df["image_path"]
+                str(dst_tree_dir / Path(p).name) for p in tree_df["image_path"]
             ]
 
             live_rows.append(tree_df)

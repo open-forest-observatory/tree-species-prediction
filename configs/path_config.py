@@ -133,9 +133,13 @@ class PathConfig:
 
     # Folder to store model checkpoints and config files
     model_output_folder: Path = Path(data_root_folder, "models")
-    
-    dead_live_model_checkpoint: Path = Path(model_output_folder, "dead_live_classifier_model.pth")
-    dead_live_model_config: Path = Path(model_output_folder, "dead_live_classifier_config.py")
+
+    dead_live_model_checkpoint: Path = Path(
+        model_output_folder, "dead_live_classifier_model.pth"
+    )
+    dead_live_model_config: Path = Path(
+        model_output_folder, "dead_live_classifier_config.py"
+    )
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
