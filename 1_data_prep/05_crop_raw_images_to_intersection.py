@@ -2,15 +2,42 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+from _get_mission_altitude import compute_height_above_ground, get_camera_locations
 from shapely.geometry import MultiPolygon
 from tqdm import tqdm
 
 import _bootstrap
 from configs.path_config import path_config
+
+
+def download_camera_and_dtm(mission_id):
+    """Download the camera and dtm files to temporary local paths using rclone."""
+    base_remote_path = (
+        f"{path_config.all_missions_remote_folder}/{mission_id:06}/processed_02/full"
+    )
+    camera_file = f"{mission_id:06}_cameras.xml"
+    dtm_file = f"{mission_id:06}_dtm-ptcloud.tif"
+
+    # Remote file paths
+    camera_remote = f"{base_remote_path}/{camera_file}"
+    dtm_remote = f"{base_remote_path}/{dtm_file}"
+
+    tmp_camera = tempfile.NamedTemporaryFile(suffix=".xml")
+    tmp_dtm = tempfile.NamedTemporaryFile(suffix=".tif")
+
+    camera_local = Path(tmp_camera.name)
+    dtm_local = Path(tmp_dtm.name)
+
+    # Download files to temporary paths
+    subprocess.run(["rclone", "copyto", camera_remote, str(camera_local)], check=True)
+    subprocess.run(["rclone", "copyto", dtm_remote, str(dtm_local)], check=True)
+
+    return (tmp_camera, tmp_dtm)
 
 
 def get_mission_geom(gdf: gpd.GeoDataFrame, mission_id: int):
@@ -75,6 +102,39 @@ def process_mission(mission_id, mission_type, parent_folder, combined_intersecti
     print(f"{mission_type}: saved {len(filtered)} filtered points")
     create_hardlinks_for_images(filtered, subfolder)
 
+    # Compute the mean altitude above ground for the filtered images
+    # Download the camera and dtm files from single-mission photogrammetry results from S3
+    tmp_camera, tmp_dtm = download_camera_and_dtm(mission_id)
+
+    # Compute the height above ground for each photogrammetry camera location
+    camera_local = Path(tmp_camera.name)
+    dtm_local = Path(tmp_dtm.name)
+
+    # Extract the camera locations as estimated by photogrammetry
+    cam_locations = get_camera_locations(camera_local)
+    # Subtract the photogrammetry-derived DTM altitude from the cameras
+    camera_elevations = compute_height_above_ground(cam_locations, dtm_local)
+
+    # Reformat the label of the cameras to match what's in the "filtered" dataframe
+    camera_elevations.label = camera_elevations.label.str.replace(
+        "/data/03_input-images/", ""
+    )
+
+    # Merge, retaining only the images present in both dataframes. Note, this drops images outside
+    # of the crop as well as those that didn't align during photogrammetry.
+    filtered_images = pd.merge(
+        filtered,
+        camera_elevations,
+        left_on="image_path_ofo",
+        right_on="label",
+        how="inner",
+    )
+    # Also drop images that were outside of the DTM extent
+    filtered_images = filtered_images[filtered_images["valid"]]
+    # Compute and return the mean altitude above ground
+    mean_altitude_agl = filtered_images["altitude_agl"].mean()
+    return mean_altitude_agl
+
 
 def main():
     plot_mission_matches = pd.read_csv(
@@ -86,6 +146,9 @@ def main():
 
     # Buffer the plots by 100m
     plots_gdf["geometry"] = plots_gdf.geometry.buffer(100)
+
+    # The derived per-mission altitudes will be stored here
+    computed_altitudes = []
 
     for _, row in tqdm(
         plot_mission_matches.iterrows(), total=len(plot_mission_matches)
@@ -121,10 +184,31 @@ def main():
             .intersection(hn_geom.buffer(0))
             .intersection(lo_geom.buffer(0))
         )
-        process_mission(hn_id, "nadir", parent_folder, combined_intersection)
-        process_mission(lo_id, "oblique", parent_folder, combined_intersection)
+        nadir_altitude = process_mission(
+            hn_id, "nadir", parent_folder, combined_intersection
+        )
+        oblique_altitude = process_mission(
+            lo_id, "oblique", parent_folder, combined_intersection
+        )
 
+        computed_altitudes.append(
+            (plot_id, hn_id, lo_id, nadir_altitude, oblique_altitude)
+        )
         print(f"Completed processing for plot_id: {plot_id}")
+
+    # Build a dataframe of computed altitudes and save as a CSV so it can be read in the
+    # photogrammetry step
+    altitudes_df = pd.DataFrame(
+        computed_altitudes,
+        columns=[
+            "plot_id",
+            "nadir_mission_id",
+            "oblique_mission_id",
+            "nadir_mean_altitude_agl",
+            "oblique_mean_altitude_agl",
+        ],
+    )
+    altitudes_df.to_csv(path_config.drone_mission_altitudes_per_plot_file, index=False)
 
 
 if __name__ == "__main__":

@@ -273,7 +273,7 @@ def chip_images(dset_name: str) -> tuple:
         # Store the area as an attribute for future use
         shapes_gdf["polygon_area"] = shapes_gdf.area
         # Find the max area per ID
-        max_area_per_class = shapes_gdf.groupby("IDs").max()
+        max_area_per_class = shapes_gdf[["polygon_area", "IDs"]].groupby("IDs").max()
 
         # Merge the area and max area by IDs
         shapes_gdf = shapes_gdf.join(max_area_per_class, on="IDs", rsuffix="_max")
@@ -461,7 +461,6 @@ else:
     dset_names = [d for d in all_dset_names if d in DATASETS_TO_PROCESS]
     print(f"Processing {len(dset_names)} specific datasets: {dset_names}")
 
-
 # Execute chipping with multiprocessing. This is the slow step.
 with Pool(N_PROCESSES) as p:
     # Get the list of returns
@@ -473,7 +472,7 @@ skipped_datasets = [
     dset_name for dset_name, success in zip(dset_names, successes) if not success
 ]
 
-missing_img_cts = sum([rd["missing_image_cts"] for rd in results_dicts])
+missing_img_cts = sum([rd["missing_img_cts"] for rd in results_dicts])
 total_processed = sum([rd["total_processed"] for rd in results_dicts])
 with_species_label = sum([rd["with_species_label"] for rd in results_dicts])
 without_species_label = sum([rd["without_species_label"] for rd in results_dicts])

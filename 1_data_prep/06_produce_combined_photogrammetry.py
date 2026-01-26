@@ -1,24 +1,75 @@
+import csv
 from pathlib import Path
-
-# path resolved in _bootstrap.py
-from metashape_workflow_functions import make_derived_yaml
 
 import _bootstrap
 from configs.path_config import path_config
 
+# path resolved in _bootstrap.py, so we need to force isort to keep it after the bootstrap import
+from metashape_workflow_functions import make_derived_yaml  # isort: skip
+
 METASHAPE_CONFIG = Path(
-    path_config.automate_metashape_path, "config", "config-base.yml"
+    path_config.automate_metashape_path, "config", "config-example.yml"
 )
+
+
+def correct_pathing(sub_mission_paths):
+    """
+    Update the paths so they refer to the data as seen inside the container and ensure only
+    directories are present.
+    """
+    return [
+        str(
+            Path(
+                path_config.argo_imagery_path,
+                f.relative_to(path_config.paired_image_sets_for_photogrammetry),
+            )
+        )
+        for f in sub_mission_paths
+        if f.is_dir()
+    ]
 
 
 def produce_combined_config(imagery_folder: Path):
     # Extract the last part of the path, which is the "<plot_id>_<nadir_id>_<oblique_id>" string
     run_name = imagery_folder.name
-
     try:
-        _, nadir_id, oblique_id = run_name.split("_")
-    except ValueError:
+        plot_id, nadir_id, oblique_id = run_name.split("_")
+    except:
+        print(f"Couldn't parse run_name {run_name}")
         return
+
+    # Read data with the csv module to avoid additional dependencies
+    with open(path_config.drone_mission_altitudes_per_plot_file, "r") as f:
+        # Skip header
+        derived_altitudes = [l for l in csv.reader(f)][1:]
+
+    # Determine which altitude row corresponds to this imagery set
+    matching_row = [
+        row
+        for row in derived_altitudes
+        if (
+            row[0] == plot_id.lstrip("0")
+            and row[1] == nadir_id.lstrip("0")
+            and row[2] == oblique_id.lstrip("0")
+        )
+    ]
+    if len(matching_row) != 1:
+        print(
+            f"Only one row should have been found, instead: {matching_row}"
+            + f". For plot_id={plot_id}, nadir_id={nadir_id}, oblique_id={oblique_id}"
+        )
+        return
+
+    if not matching_row[0][3] or not matching_row[0][4]:
+        print("Invalid altitude")
+        return
+
+    # Extract the average altitudes and compute the difference between them
+    nadir_average_alt = float(matching_row[0][3])
+    oblique_average_alt = float(matching_row[0][4])
+
+    diff = nadir_average_alt - oblique_average_alt
+
     # Find the path to the imagery datasets.
     # Note that we could skip the step of computing oblique and nadir folders and just use one glob
     # specifying that folders are nested three levels deep, but this is a little more robust to
@@ -27,34 +78,38 @@ def produce_combined_config(imagery_folder: Path):
     oblique_dataset_path = Path(imagery_folder, "oblique", oblique_id)
     # Find the sub-folders, corresponding to sub-missions of this dataset, for both oblique and
     # nadir images
-    sub_missions = list(nadir_dataset_path.glob("*")) + list(
-        oblique_dataset_path.glob("*")
-    )
+    nadir_sub_missions = list(nadir_dataset_path.glob("*"))
+    oblique_sub_missions = list(oblique_dataset_path.glob("*"))
 
     # When we run photogrammetry it's going to be within docker and the data will be mounted in a
     # volume. This will change the paths compared to what's on /ofo-share. This updates the input
     # folders so they are appropriate for docker.
-    sub_missions = [
-        str(
-            Path(
-                path_config.argo_imagery_path,
-                f.relative_to(path_config.paired_image_sets_for_photogrammetry),
-            )
-        )
-        for f in sub_missions
-        if f.is_dir()
-    ]
+    nadir_sub_missions = correct_pathing(nadir_sub_missions)
+    oblique_sub_missions = correct_pathing(oblique_sub_missions)
+
+    # Concatenate the two
+    sub_missions = nadir_sub_missions + oblique_sub_missions
+
+    # This will tell metashape to shift the files such that the vertical offset between the
+    # average altitude of oblique and nadir images matches the difference in heights above ground
+    # computed from single-mission photogrammetry.
+    paired_offset = {
+        "apply_paired_altitude_offset": True,
+        "paired_altitude_offset": diff,
+        "lower_offset_folders": oblique_sub_missions,
+        "upper_offset_folders": nadir_sub_missions,
+    }
 
     # Build and override dict that will update the base config with the location of the input images.
     # Also, only generate the DSM-ptcloud orthomosaic. Note, we only need the DTM and mesh-based
     # DSM for downstream experiments, but the ptcloud-based DEM must be computed for building the
     # orthomosaic
     # Finally, the point clouds are removed from the project files to save space.
-
     override_dict = {
-        "photo_path": sub_missions,
-        "buildOrthomosaic": {"surface": ["DSM-ptcloud"]},
-        "buildPointCloud": {"remove_after_export": True},
+        "project": {"photo_path": sub_missions},
+        "build_orthomosaic": {"surface": ["DSM-ptcloud"]},
+        "build_point_cloud": {"remove_after_export": True},
+        "add_photos": paired_offset,
     }
     # Where to save the config
     output_config_file = Path(
