@@ -8,7 +8,7 @@ import _bootstrap
 from configs.path_config import path_config
 
 # Configuration parameters
-DATA_FOLDER_PATH = path_config.cropped_tree_training_images
+DATA_FOLDER_PATH = path_config.live_cropped_trees
 OUTPUT_PATH = path_config.mmpretrain_dataset_folder
 SPLIT_FILE_PATH = path_config.train_val_split_file
 SPECIES_LEVEL = "l4"  # Class lumping level options: 'l1', 'l2', 'l3', 'l4'
@@ -33,9 +33,9 @@ def load_split_from_file(split_file_path):
     return train_datasets, val_datasets
 
 
-def get_all_dataset_names(labelled_path):
+def get_all_dataset_names(data_folder_path):
     all_datasets = set()
-    for item in labelled_path.iterdir():
+    for item in data_folder_path.iterdir():
         if item.is_dir():
             all_datasets.add(item.name)
     return all_datasets
@@ -78,10 +78,9 @@ def create_mmpretrain_structure(
     data_folder_path = Path(data_folder_path)
     output_path = Path(output_path)
     split_file_path = Path(split_file_path)
-    labelled_path = data_folder_path / "labelled"
 
-    if not labelled_path.exists():
-        raise ValueError(f"Labelled folder not found at {labelled_path}")
+    if not data_folder_path.exists():
+        raise ValueError(f"Data folder not found at {data_folder_path}")
     if not split_file_path.exists():
         raise ValueError(f"Split file not found at {split_file_path}")
 
@@ -96,7 +95,7 @@ def create_mmpretrain_structure(
     train_datasets, val_datasets = load_split_from_file(split_file_path)
 
     print(f"\nScanning labelled folder for datasets...")
-    all_datasets = get_all_dataset_names(labelled_path)
+    all_datasets = get_all_dataset_names(data_folder_path)
     print(f"Total unique datasets found: {len(all_datasets)}")
 
     train_set = set(train_datasets)
@@ -121,9 +120,9 @@ def create_mmpretrain_structure(
     if missing_val:
         print(f"WARNING: {len(missing_val)} val datasets not found in labelled folder")
 
-    all_metadata_files = list(labelled_path.rglob("*_metadata.csv"))
+    all_metadata_files = list(data_folder_path.rglob("*_metadata.csv"))
     if not all_metadata_files:
-        raise ValueError(f"No metadata files found in {labelled_path}")
+        raise ValueError(f"No metadata files found in {data_folder_path}")
 
     print(f"\nFound {len(all_metadata_files)} metadata files")
 

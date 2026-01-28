@@ -121,12 +121,25 @@ class PathConfig:
     # cropped trees using raw images and tif file masks of tree id labels (rendered_instance_ids_path)
     cropped_tree_training_images = intermediate_data_folder / "cropped_trees"
 
+    # Live cropped trees after filtering out dead trees
+    live_cropped_trees = intermediate_data_folder / "cropped_trees_live"
+
     # Output of 14_prepare_mmpretrain_dataset.py
     mmpretrain_dataset_folder: Path = Path(
         intermediate_data_folder, "mmpretrain_dataset"
     )
 
     withheld_plots_file: Path = Path(raw_folder, "withheld_ground_plot_ids_v1.csv")
+
+    # Folder to store model checkpoints and config files
+    model_output_folder: Path = Path(data_root_folder, "models")
+
+    dead_live_model_checkpoint: Path = Path(
+        model_output_folder, "dead_live_classifier_model.pth"
+    )
+    dead_live_model_config: Path = Path(
+        model_output_folder, "dead_live_classifier_config.py"
+    )
 
     def __setattr__(self, name, value):
         """Type enforcement if config variables are overridden"""
