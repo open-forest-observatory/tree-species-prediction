@@ -1,5 +1,6 @@
 import math
 import torch
+import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
@@ -10,6 +11,7 @@ from torchvision.transforms.functional import to_pil_image
 import _bootstrap
 from configs.data_reduction_config import dr_config
 from configs.path_config import path_config
+from data.dataset import collate_batch
 from training_utils.image_processing import unnormalize
 from training_utils.ctx import vram_ctx
 from training_utils.data_reduction.omp import OrthogonalMP_REG_Parallel_V1
@@ -41,15 +43,31 @@ class GradMatchPBSelector:
 
     def _batch_grad_head(self, imgs, labels):
         """
-        Batch gradient atom = grad(loss_mean, head_params) flattened to (d,)
+        Batch gradient atom = grad(loss, head_params) flattened to (d,).
+        Uses .sum() reduction on loss to match CORDS semantics.
+
+        If dr_config.use_closed_form_grads is True, uses closed-form gradient
+        for the final linear layer only (faster but requires linear final layer).
         """
         self.model.eval()
+
+        if dr_config.use_closed_form_grads:
+            return self._batch_grad_closed_form(imgs, labels)
+        else:
+            return self._batch_grad_autograd(imgs, labels)
+
+    def _batch_grad_autograd(self, imgs, labels):
+        """
+        Compute gradients via autograd. Works with any head architecture.
+        Uses loss.sum() to match CORDS gradient scaling.
+        """
         head_params = self.model.head_parameters()
         if not head_params:
             raise RuntimeError("No trainable classifier_head params found for selection.")
 
         logits = self.model(imgs)
-        loss = self.criterion(logits, labels)
+        # Use sum reduction to match CORDS (not mean)
+        loss = F.cross_entropy(logits, labels, reduction='sum')
 
         grads = torch.autograd.grad(
             loss,
@@ -60,7 +78,42 @@ class GradMatchPBSelector:
         )
         g = torch.cat([gi.reshape(-1) for gi in grads], dim=0).detach()
 
-        # IMPORTANT: keep OMP numerically stable
+        return g.float()
+
+    def _batch_grad_closed_form(self, imgs, labels):
+        """
+        Closed-form gradient computation for the final linear layer.
+        This is faster than autograd but only computes gradients for the last layer.
+
+        For a linear layer: logits = W @ prelogit + bias
+          - dL/d_bias = dL/d_logits (summed over batch)
+          - dL/d_W = sum_i( outer(dL/d_logits[i], prelogit[i]) )
+
+        Returns gradient vector of shape (out_features + out_features * in_features,)
+        i.e., [bias_grad, weight_grad.flatten()]
+        """
+        # get logits and pre-logit features (input to final linear)
+        logits, prelogit = self.model.forward_with_prelogit(imgs)
+
+        # compute per-sample loss and gradient of loss w.r.t. logits
+        # dL/d_logits = softmax(logits) - one_hot(labels)  for cross-entropy
+        with torch.no_grad():
+            probs = F.softmax(logits, dim=1)  # (B, num_classes)
+            one_hot = F.one_hot(labels, num_classes=logits.size(1)).float()  # (B, num_classes)
+            # gradient of cross-entropy loss w.r.t. logits (summed, not averaged)
+            dl_dlogits = probs - one_hot  # (B, num_classes)
+
+        # closed-form gradients for final linear layer
+        # bias gradient: sum over batch of dL/d_logits
+        bias_grad = dl_dlogits.sum(dim=0)  # (num_classes,)
+
+        # weight gradient: sum_i( outer(dL/d_logits[i], prelogit[i]) )
+        # = dl_dlogits.T @ prelogit  -> (num_classes, prelogit_dim)
+        weight_grad = dl_dlogits.T @ prelogit.detach()  # (num_classes, prelogit_dim)
+
+        # flatten and concatenate: [bias, weight.flatten()]
+        g = torch.cat([bias_grad.flatten(), weight_grad.flatten()], dim=0)
+
         return g.float()
 
     def _is_subset_epoch(self, epoch, total_epochs):
@@ -72,15 +125,97 @@ class GradMatchPBSelector:
         )
 
     def select_perbatch(self, selection_loader, subset_ratio, **kwargs):
-        strategy_fn = {
-            "gradmatch": self.gradmatch_select,
-            "random": self.random_select,
-        }.get(self.strategy)
-    
+        # route based on class balancing mode
+        if dr_config.force_class_balancing:
+            strategy_fn = {
+                "gradmatch": self.gradmatch_select_perclass,
+                "random": self.random_select_perclass,
+            }.get(self.strategy)
+        else:
+            strategy_fn = {
+                "gradmatch": self.gradmatch_select,
+                "random": self.random_select,
+            }.get(self.strategy)
+
         if strategy_fn is None:
             raise ValueError(f"Error: Data reduction strategy should be either 'gradmatch' or 'random'; Found: {self.strategy}")
 
         return strategy_fn(selection_loader, subset_ratio, **kwargs)
+
+    def _extract_labels(self, selection_loader):
+        """
+        Extract all labels from the selection_loader's dataset.
+        Returns:
+            labels: torch.LongTensor of shape (N,) where N is len(selection_loader.dataset)
+        """
+        sel_subset = selection_loader.dataset
+        labels = []
+        for i in range(len(sel_subset)):
+            # sel_subset[i] returns (img, label, meta)
+            _, label, _ = sel_subset[i]
+            labels.append(label)
+        return torch.tensor(labels, dtype=torch.long)
+
+    def _compute_gradients_for_loader(self, loader, desc_prefix=""):
+        """
+        Compute per-sample gradients for all samples in a loader.
+        Returns:
+            grads: torch.Tensor of shape (N, d) where N is num samples, d is grad dim
+        """
+        grad_list = []
+        grad_pbar = tqdm(
+            loader,
+            desc=f"{desc_prefix}computing sample grads",
+            leave=False,
+            dynamic_ncols=True,
+        )
+        for batch_idx, (imgs, labels, _metas) in enumerate(grad_pbar):
+            with vram_ctx('DR-FORWARD-perclass', step=batch_idx, epoch=self.epoch):
+                imgs = imgs.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
+                # compute per-sample gradients (batch_size=1 for per-sample)
+                g = self._batch_grad_head(imgs, labels)
+                grad_list.append(g)
+        return torch.stack(grad_list, dim=0)  # (N, d)
+
+    def _run_omp_and_collect(self, A, b, budget, positive, base_indices, sample_indices):
+        """
+        Run OMP and collect selected indices and weights.
+
+        Args:
+            A: (d, n) gradient matrix
+            b: (d,) target gradient
+            budget: number of samples to select
+            positive: enforce positive coefficients
+            base_indices: mapping from local idx to base dataset idx
+            sample_indices: mapping from local idx to subset idx
+
+        Returns:
+            chosen_subset_indices: list of subset indices
+            sample_weight_map: dict mapping base_ds_idx -> gamma
+            reg: OMP coefficients tensor
+        """
+        reg = OrthogonalMP_REG_Parallel_V1(
+            A, b,
+            nnz=budget,
+            positive=positive,
+            lam=self.lam,
+            tol=self.eps,
+            device='cpu',
+        )
+
+        chosen_local_ids = torch.nonzero(reg).view(-1).tolist()
+        chosen_subset_indices = []
+        sample_weight_map = {}
+
+        for lid in chosen_local_ids:
+            gamma = float(reg[lid].item())
+            sub_i = sample_indices[lid]
+            base_i = int(base_indices[sub_i])
+            chosen_subset_indices.append(sub_i)
+            sample_weight_map[base_i] = gamma
+
+        return chosen_subset_indices, sample_weight_map, reg
 
     def random_select(self, selection_loader, subset_ratio, positive=True, save_plots=False, save_images=0):
         """
@@ -176,7 +311,8 @@ class GradMatchPBSelector:
                 positive=positive,
                 lam=self.lam,
                 tol=self.eps,
-                device=str(self.device),
+                #device=str(self.device),
+                device='cpu',
             )  # (n_batches,)
 
         chosen_batch_ids = torch.nonzero(reg).view(-1).tolist()
@@ -199,7 +335,7 @@ class GradMatchPBSelector:
                 sample_weight_map[base_i] = gamma
 
         # Note: more vram logging in training_utils.data_reduction.metrics.omp_diagnostics()
-        extended_omp_diag = omp_diagnostics(A, b, reg, k=k_batches, positive=positive, epoch=self.epoch)
+        extended_omp_diag = omp_diagnostics(A, b, reg, k=k_batches, positive=positive, device='cpu', epoch=self.epoch)
         diag = {
             "n_batches_total": n_batches,
             "k_batches": k_batches,
@@ -231,6 +367,173 @@ class GradMatchPBSelector:
             )
 
         return chosen_subset_indices, sample_weight_map, diag
+
+    def gradmatch_select_perclass(self, selection_loader, subset_ratio, positive=True, save_plots=False, save_images=0):
+        """
+        PerClass GradMatch selection: run OMP separately for each class with proportional budget.
+        This ensures class-balanced subset selection.
+
+        Returns:
+            chosen_subset_indices: list[int] (indices w.r.t. selection_loader.dataset)
+            sample_weight_map: dict[int -> float] (base_ds_idx -> gamma)
+            diag: dict
+        """
+        assert 0 < subset_ratio <= 1.0
+
+        sel_subset = selection_loader.dataset
+        base_indices = sel_subset.indices  # maps subset_idx -> base_ds_idx
+        N_total = len(sel_subset)
+
+        # extract all labels (this iterates through dataset once)
+        print("GradMatchPC: extracting labels...")
+        all_labels = self._extract_labels(selection_loader)
+        num_classes = int(all_labels.max().item()) + 1
+
+        # total budget
+        total_budget = max(1, int(math.ceil(subset_ratio * N_total)))
+
+        # collect results across all classes
+        all_chosen_subset_indices = []
+        all_sample_weight_map = {}
+        per_class_diag = {}
+
+        for class_idx in tqdm(range(num_classes), desc="GradMatchPC: processing classes"):
+            # find samples belonging to this class
+            class_mask = (all_labels == class_idx)
+            class_subset_idxs = torch.where(class_mask)[0].tolist()  # subset indices for this class
+            n_class = len(class_subset_idxs)
+
+            if n_class == 0:
+                continue
+
+            # proportional budget for this class
+            class_budget = max(1, int(math.ceil(total_budget * n_class / N_total)))
+
+            # create a loader for this class's samples (batch_size=1 for per-sample gradients)
+            class_data = Subset(sel_subset, class_subset_idxs)
+            class_loader = DataLoader(
+                class_data,
+                batch_size=1,  # per-sample gradients
+                shuffle=False,
+                num_workers=0,  # avoid multiprocessing overhead for small subsets
+                pin_memory=True,
+                collate_fn=collate_batch,
+            )
+
+            # compute per-sample gradients for this class
+            grads = self._compute_gradients_for_loader(class_loader, desc_prefix=f"Class {class_idx}: ")
+            A = grads.transpose(0, 1).contiguous()  # (d, n_class)
+            b = grads.sum(dim=0).contiguous()  # (d,)
+
+            # run OMP for this class
+            with vram_ctx(f'DR-omp-class{class_idx}', epoch=self.epoch):
+                class_chosen, class_weights, reg = self._run_omp_and_collect(
+                    A, b, class_budget, positive,
+                    base_indices, class_subset_idxs  # map local -> subset -> base
+                )
+
+            all_chosen_subset_indices.extend(class_chosen)
+            all_sample_weight_map.update(class_weights)
+
+            per_class_diag[f"class_{class_idx}"] = {
+                "n_samples": n_class,
+                "budget": class_budget,
+                "n_selected": len(class_chosen),
+            }
+
+        # fill remaining budget with random samples if needed (due to rounding)
+        diff = total_budget - len(all_chosen_subset_indices)
+        if diff > 0:
+            remaining = set(range(N_total)) - set(all_chosen_subset_indices)
+            extra = np.random.choice(list(remaining), size=min(diff, len(remaining)), replace=False)
+            for sub_i in extra:
+                all_chosen_subset_indices.append(int(sub_i))
+                base_i = int(base_indices[int(sub_i)])
+                all_sample_weight_map[base_i] = 1.0
+
+        # shuffle to mix classes during training
+        rand_perm = np.random.permutation(len(all_chosen_subset_indices))
+        all_chosen_subset_indices = [all_chosen_subset_indices[i] for i in rand_perm]
+
+        diag = {
+            "method": "gradmatch_perclass",
+            "n_total": N_total,
+            "total_budget": total_budget,
+            "n_points_selected": len(all_chosen_subset_indices),
+            "subset_ratio": subset_ratio,
+            "num_classes": num_classes,
+            "per_class": per_class_diag,
+            "random_fill": max(0, diff),
+        }
+
+        return all_chosen_subset_indices, all_sample_weight_map, diag
+
+    def random_select_perclass(self, selection_loader, subset_ratio, positive=True, save_plots=False, save_images=0):
+        """
+        PerClass random selection baseline: randomly select proportionally from each class.
+
+        Returns:
+            chosen_subset_indices: list[int] (indices w.r.t. selection_loader.dataset)
+            sample_weight_map: dict[int -> float] (base_ds_idx -> weight=1.0)
+            diag: dict
+        """
+        assert 0 < subset_ratio <= 1.0
+
+        sel_subset = selection_loader.dataset
+        base_indices = sel_subset.indices
+        N_total = len(sel_subset)
+
+        # extract all labels
+        print("RandomPC: extracting labels...")
+        all_labels = self._extract_labels(selection_loader)
+        num_classes = int(all_labels.max().item()) + 1
+
+        total_budget = max(1, int(math.ceil(subset_ratio * N_total)))
+
+        all_chosen_subset_indices = []
+        all_sample_weight_map = {}
+        per_class_diag = {}
+        rng = np.random.default_rng()
+
+        for class_idx in tqdm(range(num_classes), desc="RandomPC: processing classes"):
+            class_mask = (all_labels == class_idx)
+            class_subset_idxs = torch.where(class_mask)[0].tolist()
+            n_class = len(class_subset_idxs)
+
+            if n_class == 0:
+                continue
+
+            class_budget = max(1, int(math.ceil(total_budget * n_class / N_total)))
+            # randomly select from this class
+            selected_local = rng.choice(n_class, size=min(class_budget, n_class), replace=False)
+
+            for lid in selected_local:
+                sub_i = class_subset_idxs[lid]
+                base_i = int(base_indices[sub_i])
+                all_chosen_subset_indices.append(sub_i)
+                all_sample_weight_map[base_i] = 1.0
+
+            per_class_diag[f"class_{class_idx}"] = {
+                "n_samples": n_class,
+                "budget": class_budget,
+                "n_selected": len(selected_local),
+            }
+
+        # shuffle
+        rand_perm = np.random.permutation(len(all_chosen_subset_indices))
+        all_chosen_subset_indices = [all_chosen_subset_indices[i] for i in rand_perm]
+
+        diag = {
+            "method": "random_perclass",
+            "n_total": N_total,
+            "total_budget": total_budget,
+            "n_points_selected": len(all_chosen_subset_indices),
+            "subset_ratio": subset_ratio,
+            "num_classes": num_classes,
+            "per_class": per_class_diag,
+        }
+
+        return all_chosen_subset_indices, all_sample_weight_map, diag
 
     def _get_subset_meta(self, selection_loader, subset_idx: int):
         """

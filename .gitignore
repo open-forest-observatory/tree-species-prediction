@@ -19,6 +19,9 @@
 # cache for statically transformed imgs
 /2_training/cache/*
 
+# scratch / test data
+scratch/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

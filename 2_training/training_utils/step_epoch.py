@@ -66,7 +66,7 @@ def _step_epoch(
                     assert (w >= 0).all()
 
                     # normalize weights so loss scale stays comparable epoch-to-epoch
-                    #w = w / (w.mean() + 1e-12)
+                    w = w / (w.mean() + 1e-12)
 
                     loss = (loss_vec * w).mean()
             else:

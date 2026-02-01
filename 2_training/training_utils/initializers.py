@@ -57,6 +57,7 @@ def init_training():
         path_config.pretrained_model_path, # plant clef 2024, 'only_classifier_then_all' -> fine tuned backbone
         backbone_name=model_config.backbone_name,
         num_classes=len(tree_dset.label2idx_map),
+        drop_rate=model_config.drop_rate,
         backbone_is_trainable=False, # with already tuned backbone, we won't touch it at least to start (can further tune in later epochs)
     ).to(model_config.device)
 

@@ -67,14 +67,15 @@ def OrthogonalMP_REG_CUDA(A, b, tol=1E-4, nnz=None, positive=False, lam=1, devic
             if positive:
                 while min(x_i) < 0.0:
                     argmin = torch.argmin(x_i)
-                    #indices = indices[:argmin] + indices[argmin + 1:]
                     del indices[argmin.item()]
                     A_i = torch.cat((A_i[:argmin], A_i[argmin + 1:]), dim=0)
-                    if argmin.item() == A_i.shape[0]:
+                    # if all atoms removed, break out of both loops
+                    if A_i.shape[0] == 0:
                         break
                     temp = torch.matmul(A_i, torch.transpose(A_i, 0, 1)) + lam * torch.eye(A_i.shape[0], device=device)
                     x_i, _, _, _ = torch.linalg.lstsq(temp, torch.matmul(A_i, b).view(-1, 1))
-        if argmin.item() == A_i.shape[0]:
+        # if all atoms were removed due to negative coefficients, stop
+        if A_i.shape[0] == 0:
             break
 
         resid = b - (A_i.t() @ x_i).view(-1) # A_i.T.dot(x_i)
@@ -99,6 +100,7 @@ def OrthogonalMP_REG_Parallel_V1(A, b, tol=1E-4, nnz=None, positive=False, lam=1
     Returns:
        vector of length n
     '''
+    A, b, = A.to(device), b.to(device)
     AT = torch.transpose(A, 0, 1)
     d, n = A.shape
     if nnz is None:
@@ -108,7 +110,7 @@ def OrthogonalMP_REG_Parallel_V1(A, b, tol=1E-4, nnz=None, positive=False, lam=1
     normb = b.norm().item()
     indices = []
 
-    argmin = torch.tensor([-1])
+    argmin = torch.tensor([-1], device=device)
     omp_pbar = tqdm(
         range(nnz),
         total=nnz,

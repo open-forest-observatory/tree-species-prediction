@@ -36,20 +36,20 @@ class TreeModelConfig:
     num_workers: Union[int,str] = 'auto'        # workers for the dataloader; 'auto' sets num workers to the current CPU core count
     max_class_imbalance_factor: float = 0       # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
-    min_samples_per_class: int = 500            # 0 -> no limit; exclude classes with fewer than this num samples
-    max_total_samples: int = 500                # for testing purposes, randomly subsample images up to this amount;
+    min_samples_per_class: int = 0            # 0 -> no limit; exclude classes with fewer than this num samples
+    max_total_samples: int = 0                # for testing purposes, randomly subsample images up to this amount;
                                                 # set to 0 to have no upper limit
-    use_class_balancing: bool = True            # use weighted random sampler to balance classes during training
+    use_class_balancing: bool = False            # use weighted random sampler to balance classes during training
     
     # determines how to split data into train/test
     # caution with plot level split -> currently no datasets marked as 'test' have been processed by steps prior to this training
     data_split_level: Literal['plot', 'tree', 'image'] = 'tree'
     
     # epoch loop iterations
-    epochs: int = 20                            # num passes through the training dataset
+    epochs: int = 10                            # num passes through the training dataset
     warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
     freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
-    batch_size: int = 8                         # how many images processed per backprop/param update
+    batch_size: int = 16                        # how many images processed per backprop/param update
     
     # parameter stepping
     head_lr: float = 1e-3                       # learning rate: how big of a step to take down gradient when updating model params
@@ -59,9 +59,10 @@ class TreeModelConfig:
     
     # model architecture
     backbone_name: str = "vit_base_patch14_reg4_dinov2.lvd142m"
-    n_intermediate_fc_layer_neurons: int = 1024 # size of fc layer between input of backbone and output logits of classification head
+    drop_rate: float = 0.1                      # probability of dropping neurons in the linear layers
+    n_first_fc_neurons: int = 256               # size of first fc layer between input of backbone and output logits of classification head
+    n_second_fc_neurons: int = 128
                                                 # set to 0 for no intermediate layer
-    n_classifier_layers: int = 3                # TODO: implement additional layers
 
     # optimizations
     n_last_layers_to_unfreeze: int = 0          # unfreezing all layers causes OOM errors, choose how many of the last layers to make tunable

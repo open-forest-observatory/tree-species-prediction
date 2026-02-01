@@ -6,7 +6,8 @@ import numpy as np
 
 def confusion_matrix(unique_class_labels, dataloader, model, device, exclude_empty=False):
     """Create a confusion matrix of ground truth labels vs predicted labels for all classes."""
-    confmat = ConfusionMatrix(task="multiclass", num_classes=len(unique_class_labels)).to(device)
+    num_classes = len(unique_class_labels)
+    confmat = ConfusionMatrix(task="multiclass", num_classes=num_classes).to(device)
 
     all_preds = []
     all_targets = []
@@ -14,6 +15,14 @@ def confusion_matrix(unique_class_labels, dataloader, model, device, exclude_emp
         imgs, labels = imgs.to(device), labels.to(device)
         outputs = model(imgs)
         preds = torch.argmax(outputs, dim=1)
+        
+        # drop any samples whose target or pred is out of range
+        # (common when val loader includes classes not in training)
+        valid = (labels >= 0) & (labels < num_classes) & (preds >= 0) & (preds < num_classes)
+        if valid.any():
+            all_preds.append(preds[valid])
+            all_targets.append(labels[valid])
+                
         all_preds.append(preds)
         all_targets.append(labels)
 

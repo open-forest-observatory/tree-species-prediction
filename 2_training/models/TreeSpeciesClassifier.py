@@ -57,11 +57,19 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
 
         # append a new classification head with 2 FC layers and optional dropout
         layers = []
+        print(f"*** NUM BACKBONE OUTPUT FEATURES: {self.backbone.num_features} ***")
         if drop_rate > 0:
             layers.append(nn.Dropout(p=drop_rate))
-        layers.append(nn.Linear(self.backbone.num_features, model_config.n_intermediate_fc_layer_neurons))
-        layers.append(nn.Linear(model_config.n_intermediate_fc_layer_neurons, num_classes))
+        layers.append(nn.Linear(self.backbone.num_features, model_config.n_first_fc_neurons))
+        if drop_rate > 0:
+            layers.append(nn.Dropout(p=drop_rate))
+        layers.append(nn.Linear(model_config.n_first_fc_neurons, model_config.n_second_fc_neurons))
+        if drop_rate > 0:
+            layers.append(nn.Dropout(p=drop_rate))
+        layers.append(nn.Linear(model_config.n_second_fc_neurons, num_classes))
         self.classifier_head = nn.Sequential(*layers)
+        for layer in layers:
+            print(layer)
 
         # transforms similar to DINOv2 pre normalization
         backbone_cfg = timm.data.resolve_model_data_config(self.backbone.pretrained_cfg)
@@ -100,6 +108,32 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
     def forward(self, x):
         feature_tensor = self.backbone(x) # (B, back_bone_feature_dim)
         return self.classifier_head(feature_tensor) # (B, num_classes)
+
+    def forward_with_prelogit(self, x):
+        """
+        Forward pass that also returns the pre-logit features (input to final linear layer).
+        Used for closed-form gradient computation in GradMatch.
+
+        Returns:
+            logits: (B, num_classes)
+            prelogit: (B, final_layer_in_features) - features just before final linear
+        """
+        feature_tensor = self.backbone(x)  # (B, backbone_feature_dim)
+
+        # pass through all layers except the last one to get pre-logit features
+        prelogit = feature_tensor
+        for layer in self.classifier_head[:-1]:
+            prelogit = layer(prelogit)
+
+        # final linear layer produces logits
+        logits = self.classifier_head[-1](prelogit)
+
+        return logits, prelogit
+
+    def get_final_layer_dims(self):
+        """Returns (in_features, out_features) of the final linear layer."""
+        final_layer = self.classifier_head[-1]
+        return final_layer.in_features, final_layer.out_features
 
 class TreeMetaDataMLP(nn.Module):
     '''

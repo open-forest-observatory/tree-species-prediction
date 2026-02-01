@@ -46,7 +46,7 @@ def _singleton_metrics(A, b, cols_idx, eps=1e-8):
     return cos.detach().cpu(), rr.detach().cpu()
 
 @torch.no_grad()
-def omp_diagnostics(A, b, reg, k, positive=False, epoch=None):
+def omp_diagnostics(A, b, reg, k, positive=False, device='cpu', epoch=None):
     """
     Compute OMP-related diagnostics; adapted from previous project.
 
@@ -60,7 +60,7 @@ def omp_diagnostics(A, b, reg, k, positive=False, epoch=None):
     Returns:
         diagnostics: dict
     """
-    device = A.device
+    A, b, reg = A.to(device), b.to(device), reg.to(device)
     eps = 1e-12
     n = A.shape[1]
 

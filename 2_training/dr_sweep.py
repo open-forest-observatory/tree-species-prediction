@@ -2,6 +2,18 @@ import subprocess
 import itertools
 from datetime import datetime
 
+''' TODO:
+Experiments:
+- train with dr on various ratios with no fine tuning of backbone on large but not all data
+    - give us an idea
+- same as above but with all data
+
+- train with dr at one ratio and full data to test n_classifier_layers
+- same as above but with tunable backbone weights
+
+
+'''
+
 # Experiment grid
 SUBSET_RATIOS = [0.1, 0.25, 0.5, 1.0]
 METHODS = ["gradmatch", "random"]
