@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shapely
-from tree_registration_and_matching.eval import match_trees_singlestratum
+from tree_registration_and_matching.eval import (
+    match_trees_singlestratum,
+    obj_mee_matching,
+)
 from tree_registration_and_matching.utils import is_overstory
 
 import _bootstrap
@@ -153,7 +156,7 @@ if __name__ == "__main__":
     # Make the output folder
     Path(path_config.drone_crowns_with_field_attributes).mkdir(exist_ok=True)
 
-    stats = []
+    all_metrics = []
 
     for high_quality_dataset in high_quality_shift_datasets:
         # Extract which field plot this dataset corresponds to
@@ -211,16 +214,15 @@ if __name__ == "__main__":
         report_stats = True
 
         if report_stats:
-            drone_crowns_within_perim = drone_crowns[
-                drone_crowns.within(ground_plot_perim.geometry.values[0])
-            ]
-            drone_trees_live_tall = drone_crowns_within_perim[drone_crowns.height > 10]
-            ground_trees_live_tall = filter_by_live_and_height(ground_trees)
-
-            n_matched = len(updated_drone_crowns)
-            n_field = len(ground_trees_live_tall)
-            n_drone = len(drone_trees_live_tall)
-            stats.append((n_matched, n_field, n_drone))
+            _, metrics = obj_mee_matching(
+                ground_trees,
+                drone_trees=drone_trees,
+                obs_bounds=ground_plot_perim,
+                edge_buffer=2,
+                min_height=10,
+                return_all_metrics=True,
+            )
+            all_metrics.append(metrics)
 
         # We have the number of successfully matched trees here
         # Now we need to figure out the number of *filtered* trees in both sets
@@ -233,7 +235,9 @@ if __name__ == "__main__":
                     high_quality_dataset + ".gpkg",
                 )
             )
-    stats = pd.DataFrame(stats, columns=["matched", "field", "drone"])
-    stats.to_csv(
-        "/ofo-share/repos/david/tree-species-prediction/scratch/matching_stats.csv"
+    all_metrics = pd.DataFrame(all_metrics)
+    all_metrics["dataset_id"] = high_quality_shift_datasets
+    all_metrics.to_csv(
+        "/ofo-share/repos/david/tree-species-prediction/scratch/matching_stats.csv",
+        index=False,
     )
