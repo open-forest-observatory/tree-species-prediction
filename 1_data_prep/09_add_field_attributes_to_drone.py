@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shapely
-
 from tree_registration_and_matching.eval import match_trees_singlestratum
 from tree_registration_and_matching.utils import is_overstory
 
