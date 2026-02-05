@@ -188,6 +188,11 @@ if __name__ == "__main__":
                 "tree_tops.gpkg",
             )
         ).to_crs(3310)
+
+        # Drop trees shorter than  5m
+        drone_trees = drone_trees[drone_trees["height"] > 5]
+        ground_trees = ground_trees[ground_trees["height"] > 5]
+
         # Load the detected crowns
         drone_crowns = gpd.read_file(
             Path(
@@ -214,6 +219,9 @@ if __name__ == "__main__":
         report_stats = True
 
         if report_stats:
+            # Remove dead trees
+            ground_trees = ground_trees[ground_trees.live_dead != "D"]
+
             _, metrics = obj_mee_matching(
                 ground_trees,
                 drone_trees=drone_trees,
