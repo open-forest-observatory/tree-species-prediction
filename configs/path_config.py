@@ -124,6 +124,9 @@ class PathConfig:
     # Live cropped trees after filtering out dead trees
     live_cropped_trees = intermediate_data_folder / "cropped_trees_live"
 
+    # Trees cropped using orthomosaics
+    cropped_ortho_trees = intermediate_data_folder / "cropped_ortho_trees"
+
     # Output of 14_prepare_mmpretrain_dataset.py
     mmpretrain_dataset_folder: Path = Path(
         intermediate_data_folder, "mmpretrain_dataset"
