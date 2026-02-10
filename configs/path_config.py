@@ -80,9 +80,9 @@ class PathConfig:
         intermediate_data_folder, "ground_plot_drone_mission_matches.csv"
     )
 
-    train_val_split_file = Path(intermediate_data_folder, "train_val_split.csv")
+    train_val_split_file = Path(intermediate_data_folder, "train_val_split_l2.csv")
     train_val_split_gpkg_file = Path(
-        intermediate_data_folder, "train_val_split_vis.gpkg"
+        intermediate_data_folder, "train_val_split_vis_l2.gpkg"
     )
 
     # Inputs to 09_add_field_attributes_to_drone.py
