@@ -34,12 +34,19 @@ class TreeModelConfig:
     downsample_threshold: int = 574             # if longer edge of input img > this, downsample instead of just crop
     downsample_to: int = 518                    # size to downsample long edge too before padding
     num_workers: Union[int,str] = 'auto'        # workers for the dataloader; 'auto' sets num workers to the current CPU core count
-    max_class_imbalance_factor: float = 0       # 0 -> no limiting factor; if class A has n samples, class B has m samples, 
+    max_class_imbalance_factor: float = 0       # 0 -> no limiting factor; if class A has n samples, class B has m samples,
                                                 # will subsample class A to be at most `max_class_imbalance_factor` * m samples
-    min_samples_per_class: int = 0            # 0 -> no limit; exclude classes with fewer than this num samples
-    max_total_samples: int = 0                # for testing purposes, randomly subsample images up to this amount;
+    min_samples_per_class: int = 0              # 0 -> no limit; exclude classes with fewer than this num samples
+    max_total_samples: int = 0                  # for testing purposes, randomly subsample images up to this amount;
                                                 # set to 0 to have no upper limit
-    use_class_balancing: bool = False            # use weighted random sampler to balance classes during training
+    use_class_balancing: bool = False           # use weighted random sampler to balance classes during training
+
+    # image preprocessing / augmentation
+    pad_color: tuple[int, int, int] = (128, 128, 128)  # RGB color for letterbox padding (gray default)
+    pad_mode: str = 'constant'                  # padding mode: 'constant' (solid color), 'reflect', 'replicate', 'circular'
+    color_jitter_strength: float = 0.05         # strength for color jitter augmentation (0.0 to disable)
+                                                # Note: tree species classification is color-sensitive; use low values
+    use_tta: bool = False                       # test-time augmentation (multi-crop averaging at inference)
     
     # determines how to split data into train/test
     # caution with plot level split -> currently no datasets marked as 'test' have been processed by steps prior to this training
@@ -48,20 +55,30 @@ class TreeModelConfig:
     # epoch loop iterations
     epochs: int = 10                            # num passes through the training dataset
     warmup_epochs: int = 2                      # how many epochs spent slowly incr lr
-    freeze_backbone_epochs: int = 2             # keep backbone frozen for first N epochs
+    freeze_backbone_epochs: int = 4             # keep backbone frozen for first N epochs
     batch_size: int = 16                        # how many images processed per backprop/param update
     
     # parameter stepping
-    head_lr: float = 1e-3                       # learning rate: how big of a step to take down gradient when updating model params
-    backbone_lr: float = 1.0e-4     
+    head_lr: float = 1.0e-3                     # learning rate: how big of a step to take down gradient when updating model params
+    backbone_lr: float = 5.0e-5     
     head_weight_decay: float = 1e-2             # factor to regularize weights towards 0
     backbone_weight_decay: float = 5e-3         
     
     # model architecture
     backbone_name: str = "vit_base_patch14_reg4_dinov2.lvd142m"
     drop_rate: float = 0.1                      # probability of dropping neurons in the linear layers
-    n_first_fc_neurons: int = 256               # size of first fc layer between input of backbone and output logits of classification head
-    n_second_fc_neurons: int = 128
+
+    # classifier head architecture
+    # if n_second_fc_neurons == 0: backbone(768) → fc1 → num_classes (shallow, 1 hidden layer)
+    # if n_second_fc_neurons > 0:  backbone(768) → fc1 → fc2 → num_classes (deep, 2 hidden layers)
+    n_first_fc_neurons: int = 512               # size of first fc layer (recommended: 512 for deep, 256 for shallow)
+    n_second_fc_neurons: int = 256              # size of second fc layer; set to 0 for shallow 2-layer head
+    use_head_layernorm: bool = True             # apply LayerNorm before first FC layer (helps stabilize pretrained features)
+    head_activation: str = 'gelu'               # activation function between FC layers ('gelu', 'relu', 'silu')
+
+    # loss function
+    label_smoothing: float = 0.0                # soft labels: 0.0 = hard labels, 0.1 = typical smoothing value
+    max_grad_norm: float = 1.0                  # gradient clipping; set to 0 to disable
                                                 # set to 0 for no intermediate layer
 
     # optimizations
@@ -83,19 +100,18 @@ class TreeModelConfig:
     device: str = 'auto'                        # ['cuda:i', 'cpu', 'auto'] -> auto will default to cuda if detected, 
                                                 # and if multiple gpus will chose the one with most free vram
     seed: int = 24                              # seed to maintain reproducibility within rng
-    ckpt_dir_tag: str = ''                      # ckpt dirs are just date and time, use this for a more helpful training identifier
+    ckpt_dir_tag: str = 'drv3'                      # ckpt dirs are just date and time, use this for a more helpful training identifier
     will_log_vram: bool = False                 # log vram usage at key cuda operations to track memory use
                                                 # helpful for debugging cuda oom errors
+    
     # dir where logs and ckpts are saved for this specific training run
     cur_training_out_dir = ""
 
 model_config, model_args = parse_config_args(TreeModelConfig)
 model_config.num_workers = get_num_workers() if model_config.num_workers == 'auto' else model_config.num_workers
 model_config.device = get_device(verbose=1) if model_config.device == 'auto' else model_config.device
-if not model_config.ckpt_dir_tag:
-    model_config.ckpt_dir_tag = f"{datetime.now().strftime('%m%d-%H%M%S')}"
-else:
-    model_config.ckpt_dir_tag = f"{datetime.now().strftime('%m%d-%H%M%S')}-{model_config.ckpt_dir_tag}"
+
+model_config.ckpt_dir_tag = f"{model_config.ckpt_dir_tag}-{datetime.now().strftime('%m%d-%H%M%S')}"
 if not model_config.cur_training_out_dir:
     model_config.cur_training_out_dir = path_config.training_ckpt_dir / model_config.ckpt_dir_tag
 model_config.cur_training_out_dir.mkdir(parents=True)

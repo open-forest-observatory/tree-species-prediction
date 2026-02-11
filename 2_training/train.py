@@ -72,7 +72,17 @@ def train():
             visuals_info=visuals_info
         )
 
+    # VRAM simulation mode: quickly test memory usage without full training
+    if dr_config.simulate_vram:
+        if subset_selector is None:
+            print("VRAM simulation requires use_data_reduction=True to test gradient matrix allocation")
+            return
+        success = subset_selector.simulate_vram(selection_loader, train_loader)
+        print(f"VRAM simulation {'PASSED' if success else 'FAILED'}")
+        return
+
     prev_sample_idxs, cur_batch_weights, omp_diag = None, None, None # for tracking each iteration's similarity and weights
+    sample_weight_map = None  # persists between epochs; None during warm-start, then set by selection
 
     n_layers_unfrozen = 0
     for epoch in range(model_config.epochs):
@@ -82,7 +92,16 @@ def train():
             tree_model.unfreeze_last_n_backbone_layers(n=n_layers_unfrozen)
 
         # Data reduction -> GradMatchPB
+        # During warm-start: train on full data (sample_weight_map remains None)
+        # At selection epochs: recompute subset and weights
+        # Between selection epochs: reuse previous subset and weights
         if subset_selector is not None and subset_selector._is_subset_epoch(epoch, model_config.epochs):
+            # optionally reshuffle training indices so batch compositions differ each selection round
+            if dr_config.shuffle_before_selection:
+                selection_loader = make_selection_loader(
+                    tree_dset, train_subset, static_transform, val_transform,
+                    shuffle_indices=True,
+                )
             chosen_subset_indices, sample_weight_map, omp_diag = subset_selector.select_perbatch(
                 selection_loader=selection_loader,
                 subset_ratio=dr_config.subset_ratio, positive=True,
@@ -90,8 +109,7 @@ def train():
             )
             # rebuild training loader on the selected indices training transforms
             train_loader = rebuild_train_loader(train_subset, chosen_subset_indices)
-        else:
-            sample_weight_map = None
+        # Note: sample_weight_map is preserved from last selection epoch (or None during warm-start)
             
         # train one epoch
         # if data reduction enabled and is subset epoch -> train with full data and pool gradients

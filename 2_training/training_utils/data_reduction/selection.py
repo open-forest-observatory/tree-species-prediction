@@ -7,6 +7,7 @@ from tqdm import tqdm
 from pathlib import Path
 from PIL import Image
 from torchvision.transforms.functional import to_pil_image
+import gc
 
 import _bootstrap
 from configs.data_reduction_config import dr_config
@@ -41,7 +42,7 @@ class GradMatchPBSelector:
         self.imgs_dir.mkdir(parents=True, exist_ok=True)
 
 
-    def _batch_grad_head(self, imgs, labels):
+    def _batch_grad_head(self, imgs, labels, dtype=torch.float16):
         """
         Batch gradient atom = grad(loss, head_params) flattened to (d,).
         Uses .sum() reduction on loss to match CORDS semantics.
@@ -52,11 +53,11 @@ class GradMatchPBSelector:
         self.model.eval()
 
         if dr_config.use_closed_form_grads:
-            return self._batch_grad_closed_form(imgs, labels)
+            return self._batch_grad_closed_form(imgs, labels, dtype)
         else:
-            return self._batch_grad_autograd(imgs, labels)
+            return self._batch_grad_autograd(imgs, labels, dtype)
 
-    def _batch_grad_autograd(self, imgs, labels):
+    def _batch_grad_autograd(self, imgs, labels, dtype=torch.float16):
         """
         Compute gradients via autograd. Works with any head architecture.
         Uses loss.sum() to match CORDS gradient scaling.
@@ -76,11 +77,11 @@ class GradMatchPBSelector:
             create_graph=False,
             allow_unused=False,
         )
-        g = torch.cat([gi.reshape(-1) for gi in grads], dim=0).detach()
+        g = torch.cat([gi.reshape(-1) for gi in grads], dim=0)
 
-        return g.float()
+        return g.to(dtype)
 
-    def _batch_grad_closed_form(self, imgs, labels):
+    def _batch_grad_closed_form(self, imgs, labels, dtype=torch.float16):
         """
         Closed-form gradient computation for the final linear layer.
         This is faster than autograd but only computes gradients for the last layer.
@@ -112,9 +113,9 @@ class GradMatchPBSelector:
         weight_grad = dl_dlogits.T @ prelogit.detach()  # (num_classes, prelogit_dim)
 
         # flatten and concatenate: [bias, weight.flatten()]
-        g = torch.cat([bias_grad.flatten(), weight_grad.flatten()], dim=0)
+        g = torch.cat([bias_grad.flatten(), weight_grad.flatten()], dim=0).to(dtype)
 
-        return g.float()
+        return g.to(dtype)
 
     def _is_subset_epoch(self, epoch, total_epochs):
         self.epoch = epoch
@@ -123,6 +124,110 @@ class GradMatchPBSelector:
             (epoch >= dr_config.num_warm_start_epochs) and  # if we have trained enough on the full data and,
             (epoch % dr_config.epoch_selection_interval == 0)  # we are at a selection interval epoch,
         )
+
+    def simulate_vram(self, selection_loader, train_loader, grad_mat_dtype=None):
+        """
+        Quickly simulate VRAM usage for a full training epoch without full computation.
+        Allocates tensors at expected sizes to check for OOM without waiting 90+ minutes.
+        """
+        # resolve grad_mat_dtype from config if not specified
+        if grad_mat_dtype is None:
+            dtype_str = dr_config.grad_mat_dtype
+            grad_mat_dtype = torch.float16 if dtype_str == 'float16' else torch.float32
+        def report_vram(label):
+            if torch.cuda.is_available():
+                allocated = torch.cuda.memory_allocated() / (1024**3)
+                reserved = torch.cuda.memory_reserved() / (1024**3)
+                total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                print(f"[VRAM-SIM] {label}: {allocated:.2f} GB allocated, {reserved:.2f} GB reserved, {total:.2f} GB total")
+
+        print("\n" + "="*60)
+        print("VRAM SIMULATION MODE")
+        print("="*60)
+
+        # --- Step 1: Baseline after model load ---
+        report_vram("Baseline (model loaded)")
+
+        # --- Step 2: Get gradient dimension from a single batch ---
+        print("\n[VRAM-SIM] Running 1 batch to measure gradient dimension...")
+        batch_iter = iter(selection_loader)
+        imgs, labels, _ = next(batch_iter)
+        imgs, labels = imgs.to(self.device), labels.to(self.device)
+
+        with torch.no_grad():
+            g_sample = self._batch_grad_head(imgs, labels, dtype=grad_mat_dtype)
+        d_params = g_sample.numel()
+        del g_sample, imgs, labels
+        torch.cuda.empty_cache()
+
+        report_vram("After single gradient computation")
+
+        # --- Step 3: Compute expected gradient matrix size ---
+        n_batches = len(selection_loader)
+        grad_mat_size_gb = (n_batches * d_params * torch.finfo(grad_mat_dtype).bits // 8) / (1024**3)
+
+        print(f"\n[VRAM-SIM] Gradient matrix dimensions:")
+        print(f"  n_batches (selection loader): {n_batches}")
+        print(f"  d_params (head parameters): {d_params:,}")
+        print(f"  dtype: {grad_mat_dtype}")
+        print(f"  Expected size: {grad_mat_size_gb:.2f} GB")
+
+        # --- Step 4: Simulate gradient matrix allocation ---
+        print(f"\n[VRAM-SIM] Allocating dummy gradient matrix ({n_batches} x {d_params})...")
+        try:
+            dummy_grads = torch.zeros((n_batches, d_params), dtype=grad_mat_dtype, device=self.device)
+            report_vram("After grad matrix (grads_per_batch)")
+
+            # Simulate transpose (this was the OOM point)
+            print("[VRAM-SIM] Simulating transpose + contiguous...")
+            dummy_A = dummy_grads.T.contiguous()
+            report_vram("After transpose (A matrix) - PEAK for gradmatch")
+
+            # Check if we can hold both (old behavior that caused OOM)
+            print("[VRAM-SIM] Note: With fix, grads_per_batch is deleted before this point")
+
+            del dummy_A
+            torch.cuda.empty_cache()
+            del dummy_grads
+            torch.cuda.empty_cache()
+
+        except torch.cuda.OutOfMemoryError as e:
+            print(f"[VRAM-SIM] OOM during gradient matrix simulation: {e}")
+            return False
+
+        # --- Step 5: Simulate training batch ---
+        print(f"\n[VRAM-SIM] Simulating training forward/backward pass...")
+        try:
+            train_iter = iter(train_loader)
+            imgs, labels, _ = next(train_iter)
+            imgs, labels = imgs.to(self.device), labels.to(self.device)
+
+            report_vram("After loading training batch to GPU")
+
+            # Forward pass
+            self.model.train()
+            logits = self.model(imgs)
+            loss = self.criterion(logits, labels)
+            report_vram("After forward pass")
+
+            # Backward pass
+            loss.backward()
+            report_vram("After backward pass - PEAK for training step")
+
+            # Cleanup
+            self.model.zero_grad()
+            del logits, loss, imgs, labels
+            torch.cuda.empty_cache()
+
+        except torch.cuda.OutOfMemoryError as e:
+            print(f"[VRAM-SIM] OOM during training simulation: {e}")
+            return False
+
+        print("\n" + "="*60)
+        print("VRAM SIMULATION COMPLETE - No OOM detected")
+        print("="*60 + "\n")
+
+        return True
 
     def select_perbatch(self, selection_loader, subset_ratio, **kwargs):
         # route based on class balancing mode
@@ -145,27 +250,36 @@ class GradMatchPBSelector:
     def _extract_labels(self, selection_loader):
         """
         Extract all labels from the selection_loader's dataset.
+        Uses pre-computed label tensor if available (fast path).
         Returns:
             labels: torch.LongTensor of shape (N,) where N is len(selection_loader.dataset)
         """
         sel_subset = selection_loader.dataset
+        base_ds = sel_subset.dataset  # the underlying TreeDataset
+
+        # fast path: use pre-computed label tensor indexed by subset indices
+        if hasattr(base_ds, 'labels') and hasattr(sel_subset, 'indices'):
+            return base_ds.labels[list(sel_subset.indices)]
+
+        # slow fallback: iterate through dataset
+        print("Warning: Using slow label extraction (dataset missing .labels property)")
         labels = []
         for i in range(len(sel_subset)):
-            # sel_subset[i] returns (img, label, meta)
             _, label, _ = sel_subset[i]
             labels.append(label)
         return torch.tensor(labels, dtype=torch.long)
 
-    def _compute_gradients_for_loader(self, loader, desc_prefix=""):
+    def _compute_gradients_for_loader(self, loader, desc_prefix="", dtype=torch.float16):
         """
         Compute per-sample gradients for all samples in a loader.
         Returns:
             grads: torch.Tensor of shape (N, d) where N is num samples, d is grad dim
         """
+        grad_method = "closed-form" if dr_config.use_closed_form_grads else "autograd"
         grad_list = []
         grad_pbar = tqdm(
             loader,
-            desc=f"{desc_prefix}computing sample grads",
+            desc=f"{desc_prefix}grads [{grad_method}]",
             leave=False,
             dynamic_ncols=True,
         )
@@ -174,11 +288,11 @@ class GradMatchPBSelector:
                 imgs = imgs.to(self.device, non_blocking=True)
                 labels = labels.to(self.device, non_blocking=True)
                 # compute per-sample gradients (batch_size=1 for per-sample)
-                g = self._batch_grad_head(imgs, labels)
+                g = self._batch_grad_head(imgs, labels, dtype=dtype)
                 grad_list.append(g)
         return torch.stack(grad_list, dim=0)  # (N, d)
 
-    def _run_omp_and_collect(self, A, b, budget, positive, base_indices, sample_indices):
+    def _run_omp_and_collect(self, A, b, budget, positive, base_indices, sample_indices, dtype=None):
         """
         Run OMP and collect selected indices and weights.
 
@@ -189,6 +303,7 @@ class GradMatchPBSelector:
             positive: enforce positive coefficients
             base_indices: mapping from local idx to base dataset idx
             sample_indices: mapping from local idx to subset idx
+            dtype: dtype for OMP tensors (if None, inferred from A)
 
         Returns:
             chosen_subset_indices: list of subset indices
@@ -202,7 +317,14 @@ class GradMatchPBSelector:
             lam=self.lam,
             tol=self.eps,
             device='cpu',
+            dtype=dtype,
         )
+
+        # optional: normalize OMP coefficients so mean(nonzero) = 1.0
+        if dr_config.normalize_omp_weights:
+            nonzero_mask = reg != 0
+            if nonzero_mask.any():
+                reg = reg / reg[nonzero_mask].mean()
 
         chosen_local_ids = torch.nonzero(reg).view(-1).tolist()
         chosen_subset_indices = []
@@ -268,7 +390,7 @@ class GradMatchPBSelector:
 
         return chosen_subset_indices, sample_weight_map, diag
 
-    def gradmatch_select(self, selection_loader, subset_ratio, positive=True, save_plots=False, save_images=0):
+    def gradmatch_select(self, selection_loader, subset_ratio, grad_mat_dtype=None, positive=True, save_plots=False, save_images=0):
         """This returns chosen_subset_indices relative to selection_loader.dataset (which is the train split)
 
         Returns:
@@ -278,31 +400,46 @@ class GradMatchPBSelector:
         """
         assert 0 < subset_ratio <= 1.0
 
+        # resolve grad_mat_dtype from config if not specified
+        if grad_mat_dtype is None:
+            dtype_str = dr_config.grad_mat_dtype
+            grad_mat_dtype = torch.float16 if dtype_str == 'float16' else torch.float32
+
         # batch_sampler yields the dataset indices for each batch (deterministic because shuffle=False)
         batch_wise_indices = list(selection_loader.batch_sampler)
         n_batches = len(batch_wise_indices)
         k_batches = max(1, int(math.ceil(subset_ratio * n_batches)))
 
+        # indicate gradient computation method
+        grad_method = "closed-form (final layer only)" if dr_config.use_closed_form_grads else "autograd (full head)"
+        print(f"GradMatchPB: using {grad_method} gradient computation")
+
         # build grad atoms (one per batch)
         grad_list = []
         grad_pbar = tqdm(
             selection_loader,
-            desc=f"GradMatchPB: computing {n_batches} batch-grads",
+            desc=f"GradMatchPB [{grad_method}]: {n_batches} batch-grads",
             leave=True,
             dynamic_ncols=True,
         )
         for batch_idx, (imgs, labels, _metas) in enumerate(grad_pbar):
             with vram_ctx('DR-FORWARD', step=batch_idx, epoch=self.epoch):
                 imgs, labels = imgs.to(self.device, non_blocking=True), labels.to(self.device, non_blocking=True)
-                g_b = self._batch_grad_head(imgs, labels)
+                g_b = self._batch_grad_head(imgs, labels, dtype=grad_mat_dtype)
                 grad_list.append(g_b)
 
         with vram_ctx('DR-assemble-gradmat', epoch=self.epoch):
             grads_per_batch = torch.stack(grad_list, dim=0)          # (n_batches, d)
-            A = grads_per_batch.transpose(0, 1).contiguous()         # (d, n_batches)
-            b = grads_per_batch.sum(dim=0).contiguous()              # (d,)
+            n_batches_dim, d_params = grads_per_batch.shape
+            size_gb = grads_per_batch.numel() * grads_per_batch.element_size() / (1024**3)
+            print(f"Stacked grad matrix: {grads_per_batch.shape} (n_batches={n_batches_dim}, n_params={d_params}), {size_gb:.2f} GB, dtype={grads_per_batch.dtype}")
+            del grad_list  # free memory
+            b = grads_per_batch.sum(dim=0).to(grad_mat_dtype)        # (d,)
+            A = grads_per_batch.T.contiguous().to(grad_mat_dtype)    # (d, n_batches)
+            del grads_per_batch  # free memory before OMP
+            torch.cuda.empty_cache()
 
-        # OMP on GPU
+        # OMP on CPU (with consistent dtype)
         print(f"Gradient Matrix shape: {A.shape} (n_class_head_params x n_batches)")
         with vram_ctx('DR-omp', epoch=self.epoch):
             reg = OrthogonalMP_REG_Parallel_V1(
@@ -311,9 +448,15 @@ class GradMatchPBSelector:
                 positive=positive,
                 lam=self.lam,
                 tol=self.eps,
-                #device=str(self.device),
                 device='cpu',
+                dtype=grad_mat_dtype,
             )  # (n_batches,)
+
+        # optional: normalize OMP coefficients so mean(nonzero) = 1.0
+        if dr_config.normalize_omp_weights:
+            nonzero_mask = reg != 0
+            if nonzero_mask.any():
+                reg = reg / reg[nonzero_mask].mean()
 
         chosen_batch_ids = torch.nonzero(reg).view(-1).tolist()
 
@@ -368,7 +511,7 @@ class GradMatchPBSelector:
 
         return chosen_subset_indices, sample_weight_map, diag
 
-    def gradmatch_select_perclass(self, selection_loader, subset_ratio, positive=True, save_plots=False, save_images=0):
+    def gradmatch_select_perclass(self, selection_loader, subset_ratio, grad_mat_dtype=None, positive=True, save_plots=False, save_images=0):
         """
         PerClass GradMatch selection: run OMP separately for each class with proportional budget.
         This ensures class-balanced subset selection.
@@ -380,9 +523,18 @@ class GradMatchPBSelector:
         """
         assert 0 < subset_ratio <= 1.0
 
+        # resolve grad_mat_dtype from config if not specified
+        if grad_mat_dtype is None:
+            dtype_str = dr_config.grad_mat_dtype
+            grad_mat_dtype = torch.float16 if dtype_str == 'float16' else torch.float32
+
         sel_subset = selection_loader.dataset
         base_indices = sel_subset.indices  # maps subset_idx -> base_ds_idx
         N_total = len(sel_subset)
+
+        # indicate gradient computation method
+        grad_method = "closed-form (final layer only)" if dr_config.use_closed_form_grads else "autograd (full head)"
+        print(f"GradMatchPC: using {grad_method} gradient computation")
 
         # extract all labels (this iterates through dataset once)
         print("GradMatchPC: extracting labels...")
@@ -421,15 +573,16 @@ class GradMatchPBSelector:
             )
 
             # compute per-sample gradients for this class
-            grads = self._compute_gradients_for_loader(class_loader, desc_prefix=f"Class {class_idx}: ")
-            A = grads.transpose(0, 1).contiguous()  # (d, n_class)
-            b = grads.sum(dim=0).contiguous()  # (d,)
+            grads = self._compute_gradients_for_loader(class_loader, desc_prefix=f"Class {class_idx}: ", dtype=grad_mat_dtype)
+            A = grads.transpose(0, 1).contiguous().to(grad_mat_dtype)  # (d, n_class)
+            b = grads.sum(dim=0).contiguous().to(grad_mat_dtype)  # (d,)
 
             # run OMP for this class
             with vram_ctx(f'DR-omp-class{class_idx}', epoch=self.epoch):
                 class_chosen, class_weights, reg = self._run_omp_and_collect(
                     A, b, class_budget, positive,
-                    base_indices, class_subset_idxs  # map local -> subset -> base
+                    base_indices, class_subset_idxs,  # map local -> subset -> base
+                    dtype=grad_mat_dtype,
                 )
 
             all_chosen_subset_indices.extend(class_chosen)

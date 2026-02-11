@@ -24,17 +24,60 @@ DECAY_EXCLUDED_PARAM_TYPES = (
     'bias'          # biases
 ) # in the below fn, we also exclude all 1D params
 
-def assemble_param_groups(tree_model):
-    groups = { # setup param groups for optimizer to control which params get weight decay
+def assemble_param_groups(tree_model, n_backbone_layers_to_include: int = 0):
+    """
+    Build parameter groups for optimizer with separate lr/decay for head vs backbone.
+
+    Args:
+        tree_model: the model
+        n_backbone_layers_to_include: number of backbone layers (from the end) to include in optimizer.
+            If 0, no backbone params are added (head-only training).
+            If > 0, only the last N blocks are included (for gradual unfreezing).
+    """
+    groups = {
         'head_decay': {'params': [], 'names': [], 'lr': model_config.head_lr, 'weight_decay': model_config.head_weight_decay, 'group_name': 'head_decay'},
         'head_nodecay': {'params': [], 'names': [], 'lr': model_config.head_lr, 'weight_decay': 0.0, 'group_name': 'head_nodecay'},
-        'backbone_decay':  {'params': [], 'names': [], 'lr': model_config.backbone_lr, 'weight_decay': model_config.backbone_weight_decay, 'group_name': 'backbone_decay'},
-        'backbone_nodecay':  {'params': [], 'names': [], 'lr': model_config.backbone_lr, 'weight_decay': 0.0, 'group_name': 'backbone_nodecay'},
-    } # names and group names here are not important for the optimizer but kept for reference/debugging
+    }
+
+    # only create backbone groups if we'll actually tune backbone layers
+    if n_backbone_layers_to_include > 0:
+        groups['backbone_decay'] = {'params': [], 'names': [], 'lr': model_config.backbone_lr, 'weight_decay': model_config.backbone_weight_decay, 'group_name': 'backbone_decay'}
+        groups['backbone_nodecay'] = {'params': [], 'names': [], 'lr': model_config.backbone_lr, 'weight_decay': 0.0, 'group_name': 'backbone_nodecay'}
+
+    # determine which backbone block indices will be unfrozen
+    backbone_blocks = tree_model.backbone.blocks
+    total_blocks = len(backbone_blocks)
+    unfreeze_start_idx = total_blocks - n_backbone_layers_to_include
+
+    # debug: print decay exclusion check for embeddings/tokens
+    print("*** Checking weight decay exclusions for embeddings/tokens ***")
+    for name, param in tree_model.named_parameters():
+        if any(t in name.lower() for t in ['embed', 'token', 'tkn', 'cls']):
+            excluded = param.ndim < 2 or any(no_decay_type in name.lower() for no_decay_type in DECAY_EXCLUDED_PARAM_TYPES)
+            print(f"  {name}: ndim={param.ndim}, excluded_from_decay={excluded}")
 
     for name, param in tree_model.named_parameters():
-        decay = True
         is_backbone = name.startswith('backbone.')
+
+        # skip backbone params that won't be unfrozen
+        if is_backbone and n_backbone_layers_to_include > 0:
+            # check if this param belongs to a block that will be unfrozen
+            # format: backbone.blocks.{idx}.xxx
+            if '.blocks.' in name:
+                try:
+                    block_idx = int(name.split('.blocks.')[1].split('.')[0])
+                    if block_idx < unfreeze_start_idx:
+                        continue  # skip frozen blocks
+                except (ValueError, IndexError):
+                    continue  # skip if can't parse
+            elif not any(x in name for x in ['norm', 'head']):
+                # skip non-block backbone params (patch_embed, cls_token, etc.) unless norm/head
+                continue
+        elif is_backbone and n_backbone_layers_to_include == 0:
+            continue  # skip all backbone params
+
+        # determine decay
+        decay = True
         if param.ndim < 2 or any(no_decay_type in name.lower() for no_decay_type in DECAY_EXCLUDED_PARAM_TYPES):
             decay = False
 
@@ -43,7 +86,13 @@ def assemble_param_groups(tree_model):
         groups[group_key]['params'].append(param)
         groups[group_key]['names'].append(name)
 
-    return list(groups.values()), groups
+    # filter out empty groups
+    param_groups = [g for g in groups.values() if len(g['params']) > 0]
+
+    group_summary = [f"{g['group_name']} ({len(g['params'])} params)" for g in param_groups]
+    print(f"*** Parameter groups: {group_summary} ***")
+
+    return param_groups, groups
 
 def init_training():
     tree_dset = TreeDataset( # init dataset
@@ -92,11 +141,16 @@ def init_training():
     #    print(f"{name:60s} | shape={tuple(p.shape)} | requires_grad={p.requires_grad}")
 
     # pass in param groups to optimizer
-    # even though backbone is initialized to frozen weights,
-    # when unfreezing the params will already in the optimizer
-    param_groups, _ = assemble_param_groups(tree_model)
+    # only include backbone params for layers that will eventually be unfrozen
+    # if n_last_layers_to_unfreeze == 0, no backbone params are added (head-only)
+    param_groups, _ = assemble_param_groups(
+        tree_model,
+        n_backbone_layers_to_include=model_config.n_last_layers_to_unfreeze
+    )
     optim = AdamW(param_groups)
-    criterion = nn.CrossEntropyLoss() # loss fn
+
+    # loss function with optional label smoothing
+    criterion = nn.CrossEntropyLoss(label_smoothing=model_config.label_smoothing)
 
     # automated mixed precision -> allows for less important calculations with lower fp precision
     enable_amp = model_config.use_amp and model_config.device == 'cuda'

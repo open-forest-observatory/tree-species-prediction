@@ -48,7 +48,8 @@ class TreeDataset(Dataset):
         img_exts: List[str] = ['.png'],                     # img exts to load
         gpkg_dir: Optional[str | Path] = None,              # path to gpkg files, if None will not have row idxs of trees
         cache_dir: Optional[str | Path] = None,             # caching images to disk after static transforms
-        cache_ver: str = 'v1'                               # bump to invalidate existing cache and reapply transforms
+        cache_ver: str = 'v1',                              # bump to invalidate existing cache and reapply transforms
+        cache_as_tensor: bool = True,                       # if True, cache as .pt tensors (faster); if False, cache as PNG
     ):
         self.imgs_root = imgs_root
         self.img_exts = {ext.lower() for ext in img_exts}
@@ -69,6 +70,9 @@ class TreeDataset(Dataset):
             m['label_idx'] = self.label2idx_map[m['species']]
             m['unique_treeID'] = f"{m['dset']}-{m['treeID']}"
             m['global_idx'] = i # id of sample in dataset for referencing even after shuffling
+
+        # pre-compute label tensor for fast label extraction (used by data reduction)
+        self._label_tensor = torch.tensor([m['label_idx'] for m in self.meta], dtype=torch.long)
 
         # get the row idx of each tree in the gpkg file
         if gpkg_dir is not None:
@@ -111,6 +115,16 @@ class TreeDataset(Dataset):
 
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.cache_ver = cache_ver
+        self.cache_as_tensor = cache_as_tensor
+
+    @property
+    def labels(self) -> torch.LongTensor:
+        """Pre-computed label tensor for fast access. Shape: (N,)"""
+        return self._label_tensor
+
+    @property
+    def num_classes(self) -> int:
+        return len(self.label2idx_map)
 
     def __len__(self):
         return len(self.img_paths)
@@ -121,14 +135,23 @@ class TreeDataset(Dataset):
 
         # try to access static transformed img on disk cache first
         if self.cache_dir is not None:
-            img = self._cache_read(meta)
-            if img is None: # if not cached previously -> load img, apply transfoms, and add to cache
+            cached = self._cache_read(meta)
+            if cached is None:
+                # not cached -> load img, apply static transforms, and add to cache
                 img = Image.open(meta["path"]).convert("RGB")
-                img = self.static_transform(img) # uint8 PIL img to save space
+                img = self.static_transform(img)
                 self._cache_put(meta, img)
+            else:
+                img = cached
         else:
             img = Image.open(meta["path"]).convert("RGB")
-            img = self.static_transform(img) # uint8 PIL img to save space
+            img = self.static_transform(img)
+
+        # if cached as tensor, we may need to convert back to PIL for random transforms
+        # (only if random_transform expects PIL input)
+        if isinstance(img, torch.Tensor) and self.random_transform is not None:
+            # convert tensor (C,H,W) to PIL for transforms that expect PIL
+            img = T.ToPILImage()(img)
 
         # training dset -> applies rng based transforms (e.g. randomFlip, colorJitter) then tensorize and normalize
         # validation dset -> only tensorize and normalize
@@ -210,27 +233,38 @@ class TreeDataset(Dataset):
         assert self.cache_dir is not None
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         # shard to avoid huge flat dirs
-        return self.cache_dir / key[:2] / f"{key}.png"
+        ext = ".pt" if self.cache_as_tensor else ".png"
+        return self.cache_dir / key[:2] / f"{key}{ext}"
 
-    def _cache_read(self, meta: Dict[str, Any]) -> Optional[Image.Image]:
+    def _cache_read(self, meta: Dict[str, Any]) -> Optional[Image.Image | torch.Tensor]:
+        """Read cached image (as tensor or PIL depending on cache_as_tensor)."""
         key = self._cache_key(meta)
         path = self._cache_path(key)
         if path.exists():
             try:
-                return Image.open(path).convert("RGB")
+                if self.cache_as_tensor:
+                    return torch.load(path, weights_only=True)
+                else:
+                    return Image.open(path).convert("RGB")
             except Exception:
                 return None
         return None
 
-    def _cache_put(self, meta: Dict[str, Any], img: Image.Image) -> None:
+    def _cache_put(self, meta: Dict[str, Any], img: Image.Image | torch.Tensor) -> None:
         """Atomic-ish write: write to tmp then rename; tolerate races."""
         try:
             key = self._cache_key(meta)
             out_path = self._cache_path(key)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = out_path.with_suffix(".tmp")
-            img.save(tmp, format="PNG", optimize=True) # uint8 PNG, small and fast
-            os.replace(tmp, out_path) # atomic on same filesystem
+            if self.cache_as_tensor:
+                # convert PIL to tensor for caching if needed
+                if isinstance(img, Image.Image):
+                    img = T.ToTensor()(img)
+                torch.save(img, tmp)
+            else:
+                img.save(tmp, format="PNG", optimize=True)
+            os.replace(tmp, out_path)  # atomic on same filesystem
         except Exception:
             # If multiple workers race, one will succeed; ignore failures
             pass

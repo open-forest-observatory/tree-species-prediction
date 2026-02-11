@@ -89,7 +89,7 @@ def omp_diagnostics(A, b, reg, k, positive=False, device='cpu', epoch=None):
     with vram_ctx('DR-omp-metrics-subsetreconstruction', epoch=epoch):
         nb = float(b.norm() + eps)
         if nnz > 0:
-            coeffs = reg[support_idx]                       # (nnz,)
+            coeffs = reg[support_idx].to(A.dtype)           # (nnz,)
             Ax = A[:, support_idx] @ coeffs                 # (d,)
             nax = float(Ax.norm() + eps)
             residual_ratio = float((b - Ax).norm() / nb)

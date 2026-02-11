@@ -55,21 +55,15 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
         # un/freeze backbone
         self.toggle_backbone_weights_trainability(backbone_is_trainable)
 
-        # append a new classification head with 2 FC layers and optional dropout
-        layers = []
-        print(f"*** NUM BACKBONE OUTPUT FEATURES: {self.backbone.num_features} ***")
-        if drop_rate > 0:
-            layers.append(nn.Dropout(p=drop_rate))
-        layers.append(nn.Linear(self.backbone.num_features, model_config.n_first_fc_neurons))
-        if drop_rate > 0:
-            layers.append(nn.Dropout(p=drop_rate))
-        layers.append(nn.Linear(model_config.n_first_fc_neurons, model_config.n_second_fc_neurons))
-        if drop_rate > 0:
-            layers.append(nn.Dropout(p=drop_rate))
-        layers.append(nn.Linear(model_config.n_second_fc_neurons, num_classes))
-        self.classifier_head = nn.Sequential(*layers)
-        for layer in layers:
-            print(layer)
+        # build classifier head with proper activations and optional LayerNorm
+        self.classifier_head = self._build_classifier_head(
+            in_features=self.backbone.num_features,
+            num_classes=num_classes,
+            drop_rate=drop_rate,
+        )
+        print(f"*** Classifier Head Architecture ***")
+        for i, layer in enumerate(self.classifier_head):
+            print(f"  [{i}] {layer}")
 
         # transforms similar to DINOv2 pre normalization
         backbone_cfg = timm.data.resolve_model_data_config(self.backbone.pretrained_cfg)
@@ -87,6 +81,53 @@ class TreeSpeciesClassifierFromPretrained(nn.Module):
             T.ToTensor(),
             T.Normalize(mean=backbone_cfg["mean"], std=backbone_cfg["std"]),
         ])
+
+    def _build_classifier_head(self, in_features: int, num_classes: int, drop_rate: float) -> nn.Sequential:
+        """
+        Build classifier head with configurable architecture.
+
+        Architecture options (controlled by model_config):
+        - Shallow (n_second_fc_neurons=0): in → [LN] → [Dropout] → FC1 → Act → FC_out
+        - Deep (n_second_fc_neurons>0):    in → [LN] → [Dropout] → FC1 → Act → [Dropout] → FC2 → Act → FC_out
+
+        Note: No dropout before final layer (hurts calibration).
+        """
+        # select activation function
+        activation_map = {
+            'gelu': nn.GELU,
+            'relu': nn.ReLU,
+            'silu': nn.SiLU,
+        }
+        activation_cls = activation_map.get(model_config.head_activation.lower(), nn.GELU)
+
+        layers = []
+
+        # optional LayerNorm to stabilize pretrained features
+        if model_config.use_head_layernorm:
+            layers.append(nn.LayerNorm(in_features))
+
+        # initial dropout (before first FC)
+        if drop_rate > 0:
+            layers.append(nn.Dropout(p=drop_rate))
+
+        # first FC layer + activation
+        layers.append(nn.Linear(in_features, model_config.n_first_fc_neurons))
+        layers.append(activation_cls())
+
+        # optional second FC layer (deep architecture)
+        if model_config.n_second_fc_neurons > 0:
+            if drop_rate > 0:
+                layers.append(nn.Dropout(p=drop_rate))
+            layers.append(nn.Linear(model_config.n_first_fc_neurons, model_config.n_second_fc_neurons))
+            layers.append(activation_cls())
+            final_in_features = model_config.n_second_fc_neurons
+        else:
+            final_in_features = model_config.n_first_fc_neurons
+
+        # final classification layer (no dropout before this)
+        layers.append(nn.Linear(final_in_features, num_classes))
+
+        return nn.Sequential(*layers)
 
     def head_parameters(self):
         return [p for p in self.classifier_head.parameters() if p.requires_grad]

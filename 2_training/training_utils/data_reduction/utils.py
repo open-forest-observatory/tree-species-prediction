@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch.utils.data import DataLoader, Subset
 import copy
 
@@ -21,17 +22,21 @@ class IndexedSubset(torch.utils.data.Dataset):
         meta["subset_idx"] = int(i)    # always int
         return img, y, meta
 
-def make_selection_loader(tree_dset, train_subset, static_T, val_T):
+def make_selection_loader(tree_dset, train_subset, static_T, val_T, shuffle_indices=False):
     # Copy base dataset so transforms don't interfere with the training dataset object
     sel_cp = copy.copy(tree_dset)
     sel_cp.static_transform = static_T
     sel_cp.random_transform = val_T
 
-    sel_subset = Subset(sel_cp, train_subset.indices)
+    indices = list(train_subset.indices)
+    if shuffle_indices:
+        indices = [indices[i] for i in np.random.permutation(len(indices))]
+
+    sel_subset = Subset(sel_cp, indices)
     sel_loader = DataLoader(
         sel_subset,
         batch_size=model_config.batch_size,
-        shuffle=False, # deterministic for selection
+        shuffle=False, # deterministic within a selection run
         num_workers=model_config.num_workers,
         pin_memory=True,
         collate_fn=collate_batch,

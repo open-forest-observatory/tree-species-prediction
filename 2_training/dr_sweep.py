@@ -15,11 +15,11 @@ Experiments:
 '''
 
 # Experiment grid
-SUBSET_RATIOS = [0.1, 0.25, 0.5, 1.0]
+SUBSET_RATIOS = [0.1, 0.25, 0.5]
 METHODS = ["gradmatch", "random"]
 EPOCHS = 10
 #MAX_SAMPLES = 5_000
-MAX_SAMPLES = 100_000
+MAX_SAMPLES = 0
 
 # args not pertaining to data reduction
 BASE_ARGS = {
@@ -31,12 +31,12 @@ BASE_ARGS = {
     "--will_log_vram": True
 }
 
-def run_experiment(method, ratio):
-    tag = f"{method}_r{ratio}_{datetime.now().strftime('%m%d-%H%M%S')}"
+def run_experiment(ratio, method=''):
+    tag = f"drv4-allCroppedTreeLvlSplit-{method}_r{ratio}"
 
     cmd = [
         "python", "train.py",
-        "--use_data_reduction" if ratio != 1.0 else "",
+        "--use_data_reduction" if method != '' else '',
         "--strategy", method,
         "--subset_ratio", str(ratio),
         "--ckpt_dir_tag", tag,
@@ -56,4 +56,5 @@ def run_experiment(method, ratio):
 
 if __name__ == "__main__":
     for ratio, method in itertools.product(SUBSET_RATIOS, METHODS):
-        run_experiment(method, ratio)
+        run_experiment(ratio, method)
+    run_experiment(1.0) # baseline all data

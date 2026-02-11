@@ -79,11 +79,19 @@ def _step_epoch(
                 if scaler is not None:
                     # scale back to fp32 and then backprop
                     scaler.scale(loss).backward()
-                    scaler.step(optim) # step down the gradient
+                    # unscale before clipping
+                    scaler.unscale_(optim)
+                    # gradient clipping
+                    if model_config.max_grad_norm > 0:
+                        torch.nn.utils.clip_grad_norm_(tree_model.parameters(), model_config.max_grad_norm)
+                    scaler.step(optim)
                     scaler.update()
                 else:
-                    loss.backward() # back propagation
-                    optim.step() # step down the gradient
+                    loss.backward()
+                    # gradient clipping
+                    if model_config.max_grad_norm > 0:
+                        torch.nn.utils.clip_grad_norm_(tree_model.parameters(), model_config.max_grad_norm)
+                    optim.step()
 
         # bunch of running metrics
         with torch.no_grad(): # don't track gradients just for metrics
