@@ -23,7 +23,7 @@ SPLIT_CSV = path_config.train_val_split_file
 CROSSWALK_CSV = path_config.species_class_crosswalk_file
 
 # Base dir to save the cropped images
-OUTPUT_BASE = Path("/ofo-share/scratch/amritha/tree-species-scratch/discard")
+OUTPUT_BASE = path_config.cropped_ortho_trees
 
 # Lumping level to use for species classes (1-4)
 LUMPING_LEVEL = 2
