@@ -74,6 +74,7 @@ def crop_trees(ortho_path, vector_path, output_base_dir, dataset_name, species_m
             
             try:
                 # Crop the ortho image using the geometry of the tree crown polygon
+                # The background is set to gray (pixel value 128) to be consistent with the raw image tree crops
                 out_image, _ = mask(src, [row['geometry']], crop=True, filled=True, nodata=128)
                 
                 # Has no pixels - edge case
