@@ -1,0 +1,282 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: live-dead-classification-workflow-
+spec:
+  serviceAccountName: argo
+  entrypoint: main
+
+  # Set imagePullPolicy for all containers in the workflow
+  podSpecPatch: |
+    containers:
+      - name: main
+        imagePullPolicy: Always
+
+  # Affinity rules for workflow pods:
+  # 1. nodeAffinity: Schedule on non-GPU nodes by default (GPU tasks override with affinity: {})
+  # 2. podAffinity: Prefer nodes with other running workflow pods to minimize autoscaler evictions
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.present
+                operator: DoesNotExist
+    podAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: workflows.argoproj.io/completed
+                  operator: In
+                  values:
+                    - "false"
+            topologyKey: kubernetes.io/hostname
+
+  # A list of input parameters available to the workflow at runtime.
+  # These parameters can be referenced throughout the workflow templates using {{workflow.parameters.<name>}}
+  arguments:
+    parameters:
+      # Path to a newline-separated text file of dataset names to process
+      - name: DATASETS_FILE
+      # Parent folders containing one subfolder per dataset
+      - name: RENDERS_FOLDER
+      - name: IMAGE_FOLDERS
+      - name: DETECTED_TREES_FOLDER
+      # Parent folder for outputs; one subfolder per dataset will be created here
+      - name: OUTPUT_FOLDER
+      # Live/dead model paths
+      - name: LD_MODEL_PATH
+      - name: LD_CONFIG_PATH
+      - name: N_WORKERS
+        value: 4
+
+  # Defining where to read raw drone imagery data and write out imagery products
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: ceph-share-rw-pvc2
+
+  templates:
+    # The 'main' template reads the datasets file and fans out to process each dataset in parallel.
+    - name: main
+      steps:
+        - - name: determine-datasets
+            template: determine-datasets
+        - - name: process-datasets
+            template: process-dataset-workflow
+            arguments:
+              parameters:
+                - name: dataset-name
+                  value: "{{item}}"
+            # Continue processing remaining datasets even if one fails
+            withParam: "{{steps.determine-datasets.outputs.result}}"
+
+    # Parse the newline-separated datasets file into a JSON array of dataset names
+    - name: determine-datasets
+      script:
+        image: python:3.9
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        command: ["python3"]
+        source: |
+          import json, sys
+          with open("/data/{{workflow.parameters.DATASETS_FILE}}", "r") as f:
+              datasets = [line.strip() for line in f if line.strip()]
+          json.dump(datasets, sys.stdout)
+
+    # Per-dataset DAG: chip -> classify -> assign predictions
+    - name: process-dataset-workflow
+      inputs:
+        parameters:
+          - name: dataset-name
+      dag:
+        # failFast=false ensures other datasets continue if this one fails
+        failFast: false
+        tasks:
+          - name: chip-images
+            template: chip-images
+            arguments:
+              parameters:
+                - name: images-folder
+                  value: "{{workflow.parameters.IMAGE_FOLDERS}}/{{inputs.parameters.dataset-name}}"
+                - name: renders-folder
+                  value: "{{workflow.parameters.RENDERS_FOLDER}}/{{inputs.parameters.dataset-name}}"
+                - name: output-folder
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/chips"
+
+          - name: classify-chips-live-dead
+            depends: "chip-images.Succeeded"
+            template: classify-chips
+            arguments:
+              parameters:
+                - name: chips-folder
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/chips"
+                - name: model-path
+                  value: "{{workflow.parameters.LD_MODEL_PATH}}"
+                - name: config-path
+                  value: "{{workflow.parameters.LD_CONFIG_PATH}}"
+                - name: output-path
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/classified-chips-LD.json"
+
+          - name: assign-live-dead-predictions-to-trees
+            depends: "classify-chips-live-dead.Succeeded"
+            template: assign-predictions-to-trees
+            arguments:
+              parameters:
+                - name: input-trees-file
+                  value: "{{workflow.parameters.DETECTED_TREES_FOLDER}}/{{inputs.parameters.dataset-name}}/tree_crowns.gpkg"
+                - name: image-level-predictions-file
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/classified-chips-LD.json"
+                - name: column-name
+                  value: "live_dead_prediction"
+                - name: output-trees-file
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/tree_crowns_w_live_dead.gpkg"
+
+## Definitions of individual step templates
+
+    - name: chip-images
+      inputs:
+        parameters:
+          - name: images-folder
+          - name: renders-folder
+          - name: output-folder
+      container:
+        image: ghcr.io/open-forest-observatory/cv-utils:feature-dr-species-inference-pipeline
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        resources:
+          requests:
+            cpu: 4
+            memory: "8Gi"
+          limits:
+            memory: "8Gi"
+        command: ["python", "/app/chip_images.py",
+                  "{{inputs.parameters.images-folder}}",
+                  "{{inputs.parameters.renders-folder}}",
+                  "{{inputs.parameters.output-folder}}",
+                  "--n-workers", "{{workflow.parameters.N_WORKERS}}"
+                  ]
+
+    - name: classify-chips
+      inputs:
+        parameters:
+          - name: chips-folder
+          - name: model-path
+          - name: config-path
+          - name: output-path
+      # Disable workflow-level non-GPU affinity; let GPU resource request handle node selection
+      affinity: {}
+      script:
+        image: waikatodatamining/mmpretrain:1.2.0_cuda11.1
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        resources:
+          requests:
+            nvidia.com/mig-1g.5gb: 1
+          limits:
+            nvidia.com/mig-1g.5gb: 1
+        command: ["python"]
+        source: |
+          import json
+          from pathlib import Path
+
+          from mmpretrain.apis import ImageClassificationInferencer
+
+          input_folder = Path("{{inputs.parameters.chips-folder}}")
+          config_path = "{{inputs.parameters.config-path}}"
+          model_path = "{{inputs.parameters.model-path}}"
+          output_path = Path("{{inputs.parameters.output-path}}")
+
+          # Listing input files
+          input_files = [
+              str(f)
+              for f in Path(input_folder).rglob("*")
+              if f.suffix.lower() in [".jpg", ".jpeg", ".png"]
+          ]
+          print(f"Running on {len(input_files)} files")
+
+          # Setting up the model
+          inferencer = ImageClassificationInferencer(model=config_path, pretrained=model_path, device="cuda")
+
+          # Run inference. This is the slow step.
+          results = inferencer(input_files, batch_size=4)
+
+          # Extract predicted classes
+          pred_labels = [r["pred_class"] for r in results]
+
+          # Build a dict from filename to predicted class
+          results_per_file = {str(k): v for k, v in zip(input_files, pred_labels)}
+
+          # Write out results
+          output_path.parent.mkdir(exist_ok=True, parents=True)
+          with open(output_path, "w") as file_h:
+              json.dump(results_per_file, file_h)
+
+    - name: assign-predictions-to-trees
+      inputs:
+        parameters:
+          - name: input-trees-file
+          - name: image-level-predictions-file
+          - name: column-name
+          - name: output-trees-file
+      script:
+        image: uhoosborne/geopandas:latest
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        resources:
+          requests:
+            cpu: 1
+            memory: "2Gi"
+          limits:
+            memory: "4Gi"
+        command: ["python"]
+        source: |
+          import json
+          import geopandas as gpd
+          import pandas as pd
+          import numpy as np
+          from pathlib import Path
+
+          column_name = "{{inputs.parameters.column-name}}"
+          image_level_predictions_file = "{{inputs.parameters.image-level-predictions-file}}"
+          input_trees_path = Path("{{inputs.parameters.input-trees-file}}")
+          output_trees_path = Path("{{inputs.parameters.output-trees-file}}")
+
+          with open(image_level_predictions_file, "r") as f:
+              preds = json.load(f)
+
+          input_files = list(preds.keys())
+          labels = list(preds.values())
+
+          tree_IDs = [Path(f).stem for f in input_files]
+
+          preds_df = pd.DataFrame({"tree_ID": tree_IDs, column_name: labels})
+
+
+          def fair_mode(series):
+              """Tie break if there two or more options"""
+              modes = series.mode()
+              mode = np.random.choice(modes)
+              return mode
+
+
+          grouped = preds_df.groupby(["tree_ID"]).apply(lambda x: fair_mode(x[column_name]))
+          grouped = pd.DataFrame({"unique_ID": grouped.index, column_name: grouped.values})
+          grouped["unique_ID"] = grouped["unique_ID"].astype(str)
+          grouped["unique_ID"] = grouped["unique_ID"].str.pad(5, fillchar="0")
+          grouped["unique_ID"] = grouped["unique_ID"].astype(str)
+
+          detected_trees = gpd.read_file(input_trees_path)
+          detected_trees["unique_ID"] = detected_trees["unique_ID"].astype(str)
+          detected_trees = detected_trees.merge(grouped, on="unique_ID", how="left")
+
+          # create output folder
+          output_trees_path.parent.mkdir(parents=True, exist_ok=True)
+
+          detected_trees.to_file(output_trees_path)
