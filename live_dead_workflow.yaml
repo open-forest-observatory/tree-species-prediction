@@ -83,7 +83,7 @@ spec:
         command: ["python3"]
         source: |
           import json, sys
-          with open("/data/{{workflow.parameters.DATASETS_FILE}}", "r") as f:
+          with open("{{workflow.parameters.DATASETS_FILE}}", "r") as f:
               datasets = [line.strip() for line in f if line.strip()]
           json.dump(datasets, sys.stdout)
 
@@ -105,7 +105,7 @@ spec:
                 - name: renders-folder
                   value: "{{workflow.parameters.RENDERS_FOLDER}}/{{inputs.parameters.dataset-name}}"
                 - name: output-folder
-                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/chips"
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/chips/{{inputs.parameters.dataset-name}}"
 
           - name: classify-chips-live-dead
             depends: "chip-images.Succeeded"
@@ -113,13 +113,13 @@ spec:
             arguments:
               parameters:
                 - name: chips-folder
-                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/chips"
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/chips/{{inputs.parameters.dataset-name}}"
                 - name: model-path
                   value: "{{workflow.parameters.LD_MODEL_PATH}}"
                 - name: config-path
                   value: "{{workflow.parameters.LD_CONFIG_PATH}}"
                 - name: output-path
-                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/classified-chips-LD.json"
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/per_chip_predictions/{{inputs.parameters.dataset-name}}.json"
 
           - name: assign-live-dead-predictions-to-trees
             depends: "classify-chips-live-dead.Succeeded"
@@ -129,11 +129,11 @@ spec:
                 - name: input-trees-file
                   value: "{{workflow.parameters.DETECTED_TREES_FOLDER}}/{{inputs.parameters.dataset-name}}/tree_crowns.gpkg"
                 - name: image-level-predictions-file
-                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/classified-chips-LD.json"
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/per_chip_predictions/{{inputs.parameters.dataset-name}}.json"
                 - name: column-name
                   value: "live_dead_prediction"
                 - name: output-trees-file
-                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/{{inputs.parameters.dataset-name}}/tree_crowns_w_live_dead.gpkg"
+                  value: "{{workflow.parameters.OUTPUT_FOLDER}}/tree_crowns_w_live_dead/{{inputs.parameters.dataset-name}}.gpkg"
 
 ## Definitions of individual step templates
 
