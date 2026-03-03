@@ -14,10 +14,7 @@ from configs.path_config import path_config
 VECTOR_DIR = path_config.drone_crowns_with_field_attributes
 
 # Base directory to access orthomosaics
-# ORTHO_BASE_DIR = path_config.photogrammetry_folder
-ORTHO_BASE_DIR = Path(
-    "/ofo-share/argo-data/argo-output/archive_20260202/species_project"
-)
+ORTHO_BASE_DIR = path_config.photogrammetry_folder
 
 # CSV file that contains the train/val split information
 SPLIT_CSV = path_config.train_val_split_file
