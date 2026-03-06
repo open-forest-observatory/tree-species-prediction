@@ -64,7 +64,7 @@ def crop_trees(ortho_path, vector_path, output_base_dir, dataset_name, species_m
         failed = 0
         skipped = 0
 
-        # Calculate buffer distance in pixels 
+        # Calculate buffer distance in pixels
         buffer_distance = 20 * src.res[0]
 
         for _, row in vector_gdf.iterrows():
@@ -112,7 +112,7 @@ def crop_trees(ortho_path, vector_path, output_base_dir, dataset_name, species_m
                 else:
                     failed += 1
                     continue
-                
+
                 filename = f"{dataset_name}_tree{unique_id}.png"
                 output_file = output_path / str(species) / filename
 
