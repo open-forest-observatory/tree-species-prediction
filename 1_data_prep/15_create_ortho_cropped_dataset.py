@@ -64,6 +64,9 @@ def crop_trees(ortho_path, vector_path, output_base_dir, dataset_name, species_m
         failed = 0
         skipped = 0
 
+        # Calculate buffer distance in pixels 
+        buffer_distance = 20 * src.res[0]
+
         for _, row in vector_gdf.iterrows():
             species = row["lumped_species"]
             unique_id = row["unique_ID"]
@@ -74,10 +77,16 @@ def crop_trees(ortho_path, vector_path, output_base_dir, dataset_name, species_m
                 continue
 
             try:
+                buffered_geom = row["geometry"].buffer(buffer_distance)
+
                 # Crop the ortho image using the geometry of the tree crown polygon
                 # The background is set to gray (pixel value 128) to be consistent with the raw image tree crops
                 out_image, _ = mask(
-                    src, [row["geometry"]], crop=True, filled=True, nodata=128
+                    src,
+                    [buffered_geom],
+                    crop=True,
+                    filled=True,
+                    nodata=128,
                 )
 
                 # Has no pixels - edge case
@@ -88,9 +97,6 @@ def crop_trees(ortho_path, vector_path, output_base_dir, dataset_name, species_m
                 # Take only the first 3 channels for RGB
                 if src.count >= 3:
                     rgb_image = out_image[:3, :, :]
-                # If there's only 1 channel (e.g. CHM), repeat it to create a 3-channel image
-                elif src.count == 1:
-                    rgb_image = np.repeat(out_image, 3, axis=0)
                 else:
                     failed += 1
                     continue
@@ -98,14 +104,15 @@ def crop_trees(ortho_path, vector_path, output_base_dir, dataset_name, species_m
                 # Transpose from (C, H, W) to (H, W, C) for saving using PIL
                 rgb_image = np.transpose(rgb_image, (1, 2, 0))
 
-                # Normalize pixel values to 0-255 range
-                if rgb_image.dtype != np.uint8:
-                    rgb_image = (
-                        (rgb_image - rgb_image.min())
-                        / (rgb_image.max() - rgb_image.min())
-                        * 255
-                    ).astype(np.uint8)
-
+                # Support uint8 or float data assumed in [0, 1] range
+                if rgb_image.dtype == np.uint8:
+                    pass  # already in correct format
+                elif np.issubdtype(rgb_image.dtype, np.floating):
+                    rgb_image = (np.clip(rgb_image, 0, 1) * 255).astype(np.uint8)
+                else:
+                    failed += 1
+                    continue
+                
                 filename = f"{dataset_name}_tree{unique_id}.png"
                 output_file = output_path / str(species) / filename
 
