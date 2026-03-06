@@ -12,7 +12,7 @@ from configs.path_config import path_config
 # Set constants
 VAL_FRACTION = 0.2
 SEED = 35
-LUMP_LEVEL = "l4"
+LUMP_LEVEL = "l2"
 CROSSWALK_PATH = path_config.species_class_crosswalk_file
 
 
