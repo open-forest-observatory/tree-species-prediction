@@ -9,7 +9,7 @@ library(tidyterra)
 library(tidyverse)
 library(sf)
 
-TRAIN_IMAGE_METADATA_FILEPATH = "/ofo-share/scratch/amritha/tree-species-scratch/january-run-2/datasets/full_mmpretrain_dataset_l2_new/train_metadata.csv"
+TRAIN_VAL_SPLIT_FILEPATH = "/ofo-share/project-data/species-prediction-project/intermediate/train_val_split_l2.csv"
 TEST_IMAGE_METADATA_FILEPATH = "/ofo-share/scratch/amritha/tree-species-scratch/january-run-2/datasets/full_mmpretrain_dataset_l2_new/test_metadata.csv"
 VAL_IMAGE_METADATA_FILEPATH = "/ofo-share/scratch/amritha/tree-species-scratch/january-run-2/datasets/full_mmpretrain_dataset_l2_new/val_metadata.csv"
 
@@ -24,6 +24,11 @@ INSET_XMIN = -121.5
 INSET_XMAX = -119.5
 INSET_YMIN = 38.5
 INSET_YMAX = 40
+
+
+train_val_split = read_csv(TRAIN_VAL_SPLIT_FILEPATH)
+train_plots = unique(train_val_split$plot_id[train_val_split$split == "train"])
+
 
 test_metadata = read_csv(TEST_IMAGE_METADATA_FILEPATH)
 val_metadata = read_csv(VAL_IMAGE_METADATA_FILEPATH)
@@ -41,12 +46,21 @@ datasets = datasets |>
   mutate(plot_id = str_split(name, "_") |>
            map_chr(1))
 
+train_datasets = data.frame(type = "train", plot_id = train_plots)
+
+datasets = bind_rows(datasets, train_datasets)
+
 
 plots_metadata = st_read(PLOTS_METADATA_FILEPATH)
 
 # Bind type onto the plots
 plots_metadata = plots_metadata |>
   left_join(datasets, by = c("plot_id" = "plot_id"))
+
+# Drop plots that are not in train, val, or test datasets
+plots_metadata = plots_metadata |>
+  filter(!is.na(type))
+
 
 # Get centroids
 plots_centroids = st_centroid(plots_metadata)
