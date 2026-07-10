@@ -101,7 +101,9 @@ inset_extent_bbox = st_bbox(c(
   st_as_sfc()
 
 # Prepare data for basemaps (transform to Web Mercator EPSG:3857)
-plots_centroids_3857 = st_transform(plots_centroids_wgs84, 3857)
+plots_centroids_3857 = st_transform(plots_centroids_wgs84, 3857) |>
+  mutate(type = factor(type, levels = c("train", "val", "test"),
+                       labels = c("Train", "Validation", "Test")))
 main_extent_3857 = st_transform(main_extent_bbox, 3857)
 inset_extent_3857 = st_transform(inset_extent_bbox, 3857)
 
@@ -119,19 +121,58 @@ basemap_main = ceramic::cc_elevation(loc = main_map_extent_3857)
 # Transform states for plotting
 states_3857 = st_transform(states, 3857)
 
+# Shared color scale for both panels: plot types (3 stops along the viridis scale) plus the two
+# extent polygons, so a single legend covers everything
+type_colors = viridisLite::viridis(3, begin = 0.0, end = 0.8)
+# Navy: between the pure blue formerly used for the bbox in (a) and the near-black panel border
+# of (b); used for both so they read as the same area
+inset_color = "#0000B3"
+yuba_color = "#CC0000"
+legend_colors = c(
+  "Train" = type_colors[1],
+  "Validation" = type_colors[2],
+  "Test" = type_colors[3],
+  "Detail area" = inset_color,
+  "North Yuba area" = yuba_color
+)
+
+shared_color_scale = scale_color_manual(
+  name = NULL,
+  values = legend_colors,
+  limits = names(legend_colors),
+  guide = guide_legend(
+    override.aes = list(
+      shape = c(16, 16, 16, NA, NA),
+      size = c(2, 2, 2, NA, NA),
+      linetype = c("blank", "blank", "blank", "solid", "solid"),
+      linewidth = c(NA, NA, NA, 0.8, 0.8),
+      fill = NA,
+      alpha = 1
+    )
+  )
+)
+
 # Inset map: regional context
 ca_inset = ggplot() +
   geom_spatraster_rgb(data = basemap_inset, alpha = 0.5, maxcell = Inf) +
-  geom_sf(data = yuba_area, fill = NA, color = "red", linewidth = 0.8) +
+  geom_sf(data = yuba_area, aes(color = "North Yuba area"), fill = NA, linewidth = 0.8) +
   geom_sf(data = states_3857, fill = NA, linewidth = 0.4, color = "black") +
+  # Invisible layer (alpha = 0; restored to visible in the legend by override.aes) so this
+  # panel's legend gets a key for the inset-area box that is drawn in panel (a)
+  geom_sf(data = inset_extent_3857, aes(color = "Detail area"), fill = NA,
+          linewidth = 0.8, alpha = 0) +
   geom_sf(data = plots_centroids_3857, color = "white", size = 2) +
-  geom_sf(data = plots_centroids_3857, color = "#E8A735", size = 1.5) +
+  geom_sf(data = plots_centroids_3857, aes(color = type), size = 1.5) +
+  shared_color_scale +
   coord_sf(crs = 4326, expand = FALSE,
            xlim = c(INSET_XMIN, INSET_XMAX),
            ylim = c(INSET_YMIN, INSET_YMAX)) +
-  theme_bw(12) +
+  theme_bw(11) +
   theme(panel.grid = element_blank(),
         axis.title = element_blank(),
+        # Match the panel outline to the bbox showing this panel's extent in panel (a); 2x the
+        # bbox linewidth because the half of the border outside the panel edge is clipped
+        panel.border = element_rect(color = inset_color, fill = NA, linewidth = 1.6),
         plot.title = element_text(margin = margin(t = 0))) +
   labs(title = "(b)")
 
@@ -139,16 +180,17 @@ ca_inset = ggplot() +
 plots_centroids_map = ggplot() +
   geom_spatraster_rgb(data = basemap_ca, alpha = 0.5, maxcell = Inf) +
   scale_fill_viridis_c(name = "Elev. (m)", breaks = seq(0, 3500, 500)) +
-  geom_sf(data = inset_extent_3857, fill = NA, color = "blue", linewidth = 0.8) +
+  geom_sf(data = inset_extent_3857, aes(color = "Detail area"), fill = NA, linewidth = 0.8) +
   geom_sf(data = states_3857, fill = NA, linewidth = 0.4, color = "black") +
   geom_sf(data = plots_centroids_3857, color = "white", size = 2) +
-  geom_sf(data = plots_centroids_3857, color = "#E8A735", size = 1.5) +
+  geom_sf(data = plots_centroids_3857, aes(color = type), size = 1.5) +
+  shared_color_scale +
   coord_sf(crs = 4326, expand = FALSE,
            xlim = c(footprints_bbox["xmin"] - bbox_buffer, footprints_bbox["xmax"] + bbox_buffer),
            ylim = c(footprints_bbox["ymin"] - bbox_buffer, footprints_bbox["ymax"] + bbox_buffer)) +
 #   scale_y_continuous(breaks = seq(39.35, 39.85, 0.1)) +
   scale_x_continuous(breaks = scales::breaks_width(4)) +
-  theme_bw(12) +
+  theme_bw(11) +
 #   annotation_scale(pad_x = unit(0.6, "cm"),
 #                    pad_y = unit(0.6, "cm"), 
 #                    location = "tr", 
@@ -156,11 +198,14 @@ plots_centroids_map = ggplot() +
 #                    bar_cols = c("black", "black"),
 #                    height = unit(0.01, "cm")) +
   theme(panel.grid = element_blank(),
-        plot.title = element_text(margin = margin(t = 0))) +
+        plot.title = element_text(margin = margin(t = 0)),
+        # Suppress this panel's legend; the shared legend is built in panel (b) and
+        # collected by patchwork for the whole figure
+        legend.position = "none") +
   labs(title = "(a)")
 
 combined_map = plots_centroids_map + ca_inset +
-  plot_layout(widths = c(1, 2))
+  plot_layout(widths = c(1, 2), guides = "collect")
 
 png(MAP_FIGURE_FILEPATH,
     res = 500, width = 3000, height = 1800)
