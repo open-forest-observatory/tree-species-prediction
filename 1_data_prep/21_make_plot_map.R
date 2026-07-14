@@ -20,8 +20,8 @@ PLOTS_METADATA_FILEPATH = "/ofo-share/project-data/species-prediction-project/ra
 MAP_FIGURE_FILEPATH = "/ofo-share/project-data/species-prediction-project/figures/plots-centroids-map.png"
 
 # Inset map extent (regional context), degrees WGS84 -- tweak these to adjust the inset view
-INSET_XMIN = -121.5
-INSET_XMAX = -119.5
+INSET_XMIN = -121.3
+INSET_XMAX = -119.8
 INSET_YMIN = 38.5
 INSET_YMAX = 40
 
@@ -103,7 +103,7 @@ inset_extent_bbox = st_bbox(c(
 # Prepare data for basemaps (transform to Web Mercator EPSG:3857)
 plots_centroids_3857 = st_transform(plots_centroids_wgs84, 3857) |>
   mutate(type = factor(type, levels = c("train", "val", "test"),
-                       labels = c("Train", "Validation", "Test")))
+                       labels = c("Train", "Validate", "Test")))
 main_extent_3857 = st_transform(main_extent_bbox, 3857)
 inset_extent_3857 = st_transform(inset_extent_bbox, 3857)
 
@@ -130,7 +130,7 @@ inset_color = "#0000B3"
 yuba_color = "#CC0000"
 legend_colors = c(
   "Train" = type_colors[1],
-  "Validation" = type_colors[2],
+  "Validate" = type_colors[2],
   "Test" = type_colors[3],
   "Detail area" = inset_color,
   "North Yuba area" = yuba_color
@@ -142,8 +142,9 @@ shared_color_scale = scale_color_manual(
   limits = names(legend_colors),
   guide = guide_legend(
     override.aes = list(
-      shape = c(16, 16, 16, NA, NA),
+      shape = c(1, 1, 1, NA, NA),
       size = c(2, 2, 2, NA, NA),
+      stroke = c(1, 1, 1, NA, NA),
       linetype = c("blank", "blank", "blank", "solid", "solid"),
       linewidth = c(NA, NA, NA, 0.8, 0.8),
       fill = NA,
@@ -161,12 +162,13 @@ ca_inset = ggplot() +
   # panel's legend gets a key for the inset-area box that is drawn in panel (a)
   geom_sf(data = inset_extent_3857, aes(color = "Detail area"), fill = NA,
           linewidth = 0.8, alpha = 0) +
-  geom_sf(data = plots_centroids_3857, color = "white", size = 2) +
-  geom_sf(data = plots_centroids_3857, aes(color = type), size = 1.5) +
+  # geom_sf(data = plots_centroids_3857, color = "white", shape = 1, size = 1, stroke = 1.5) +
+  geom_sf(data = plots_centroids_3857, aes(color = type), shape = 1, size = 1.5, stroke = 0.7) +
   shared_color_scale +
   coord_sf(crs = 4326, expand = FALSE,
            xlim = c(INSET_XMIN, INSET_XMAX),
            ylim = c(INSET_YMIN, INSET_YMAX)) +
+  scale_x_continuous(breaks = scales::breaks_width(0.5)) +
   theme_bw(11) +
   theme(panel.grid = element_blank(),
         axis.title = element_blank(),
@@ -182,8 +184,8 @@ plots_centroids_map = ggplot() +
   scale_fill_viridis_c(name = "Elev. (m)", breaks = seq(0, 3500, 500)) +
   geom_sf(data = inset_extent_3857, aes(color = "Detail area"), fill = NA, linewidth = 0.8) +
   geom_sf(data = states_3857, fill = NA, linewidth = 0.4, color = "black") +
-  geom_sf(data = plots_centroids_3857, color = "white", size = 2) +
-  geom_sf(data = plots_centroids_3857, aes(color = type), size = 1.5) +
+  # geom_sf(data = plots_centroids_3857, color = "white", shape = 1, size = 1, stroke = 1.5) +
+  geom_sf(data = plots_centroids_3857, aes(color = type), shape = 1, size = 1.5, stroke = 0.7) +
   shared_color_scale +
   coord_sf(crs = 4326, expand = FALSE,
            xlim = c(footprints_bbox["xmin"] - bbox_buffer, footprints_bbox["xmax"] + bbox_buffer),
