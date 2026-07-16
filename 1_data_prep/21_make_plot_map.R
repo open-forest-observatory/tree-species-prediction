@@ -155,7 +155,7 @@ shared_color_scale = scale_color_manual(
 
 # Inset map: regional context
 ca_inset = ggplot() +
-  geom_spatraster_rgb(data = basemap_inset, alpha = 0.5, maxcell = Inf) +
+  geom_spatraster_rgb(data = basemap_inset, alpha = 0.4, maxcell = Inf) +
   geom_sf(data = yuba_area, aes(color = "North Yuba area"), fill = NA, linewidth = 0.8) +
   geom_sf(data = states_3857, fill = NA, linewidth = 0.4, color = "black") +
   # Invisible layer (alpha = 0; restored to visible in the legend by override.aes) so this
@@ -163,7 +163,7 @@ ca_inset = ggplot() +
   geom_sf(data = inset_extent_3857, aes(color = "Detail area"), fill = NA,
           linewidth = 0.8, alpha = 0) +
   # geom_sf(data = plots_centroids_3857, color = "white", shape = 1, size = 1, stroke = 1.5) +
-  geom_sf(data = plots_centroids_3857, aes(color = type), shape = 1, size = 1.5, stroke = 0.7) +
+  geom_sf(data = plots_centroids_3857, aes(color = type), shape = 19, size = 1, stroke = 0.7) +
   shared_color_scale +
   coord_sf(crs = 4326, expand = FALSE,
            xlim = c(INSET_XMIN, INSET_XMAX),
@@ -180,12 +180,12 @@ ca_inset = ggplot() +
 
 # Main map of plot centroids with basemap
 plots_centroids_map = ggplot() +
-  geom_spatraster_rgb(data = basemap_ca, alpha = 0.5, maxcell = Inf) +
+  geom_spatraster_rgb(data = basemap_ca, alpha = 0.4, maxcell = Inf) +
   scale_fill_viridis_c(name = "Elev. (m)", breaks = seq(0, 3500, 500)) +
   geom_sf(data = inset_extent_3857, aes(color = "Detail area"), fill = NA, linewidth = 0.8) +
   geom_sf(data = states_3857, fill = NA, linewidth = 0.4, color = "black") +
   # geom_sf(data = plots_centroids_3857, color = "white", shape = 1, size = 1, stroke = 1.5) +
-  geom_sf(data = plots_centroids_3857, aes(color = type), shape = 1, size = 1.5, stroke = 0.7) +
+  geom_sf(data = plots_centroids_3857, aes(color = type), shape = 19, size = 1, stroke = 0.7) +
   shared_color_scale +
   coord_sf(crs = 4326, expand = FALSE,
            xlim = c(footprints_bbox["xmin"] - bbox_buffer, footprints_bbox["xmax"] + bbox_buffer),
