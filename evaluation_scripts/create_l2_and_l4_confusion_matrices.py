@@ -4,6 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict, Counter
 
+# This script generates tree-level confusion matrices for L2 and L4 models, with L2 classes grouped by their corresponding L4 classes.
+
+
 # -----------------------------------------------------------------------------
 # Paths
 # -----------------------------------------------------------------------------
