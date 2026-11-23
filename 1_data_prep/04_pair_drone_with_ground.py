@@ -10,6 +10,13 @@ from configs.path_config import path_config
 # Meters-based CRS used for all spatial operations
 METRIC_CRS = 32610
 
+# A plot matches a drone pair if all of it, or at least this many sq meters of it (1/4 ha), falls
+# within the HN polygon
+MIN_OVERLAP_AREA_M2 = 2500.0
+# Fraction of the plot area that must be inside the HN polygon to count as "all of the plot". Slightly
+# below 1 to absorb floating-point error along shared boundaries.
+FULL_COVERAGE_MIN_FRACTION = 0.999
+
 # HN polygons that extend beyond their LO polygon by more than this many sq meters trigger a warning
 HN_OUTSIDE_LO_TOLERANCE_M2 = 1.0
 
@@ -111,13 +118,31 @@ def match_ground_plots_with_drone_missions(
     # Project ground reference plots to the same meters-based CRS as the drone missions
     ground_ref_plots_gdf.to_crs(paired_drone_missions_gdf.crs, inplace=True)
 
-    # Buffer the plots geometry by 40m
-    ground_ref_plots_gdf["geometry"] = ground_ref_plots_gdf.buffer(40)
-
-    # Find ground plots that fall within the drone geometry
+    # Find all candidate (plot, drone pair) combinations where the plot touches the HN polygon
     joined = gpd.sjoin(
-        ground_ref_plots_gdf, paired_drone_missions_gdf, how="inner", predicate="within"
+        ground_ref_plots_gdf,
+        paired_drone_missions_gdf,
+        how="inner",
+        predicate="intersects",
     )
+
+    # Compute how much of each plot falls within the HN polygon of the matched pair
+    hn_geoms = gpd.GeoSeries(
+        paired_drone_missions_gdf.geometry.loc[joined["index_right"]].values,
+        index=joined.index,
+        crs=paired_drone_missions_gdf.crs,
+    )
+    joined["plot_area_m2"] = joined.geometry.area
+    joined["overlap_area_m2"] = joined.geometry.intersection(hn_geoms).area
+    joined["plot_fully_covered"] = (
+        joined["overlap_area_m2"]
+        >= joined["plot_area_m2"] * FULL_COVERAGE_MIN_FRACTION
+    )
+
+    # Spatial rule: keep the plot if all of it OR at least 1/4 ha of it falls within the HN polygon
+    joined = joined[
+        joined["plot_fully_covered"] | (joined["overlap_area_m2"] >= MIN_OVERLAP_AREA_M2)
+    ].copy()
 
     # Year difference should be <= 8 calendar years apart to get a valid pair
     joined["ground_and_drone_year_diff"] = (
@@ -159,6 +184,9 @@ def match_ground_plots_with_drone_missions(
             "date_lo",
             "survey_date_parsed",
             "ground_and_drone_year_diff",
+            "plot_area_m2",
+            "overlap_area_m2",
+            "plot_fully_covered",
         ]
     ].reset_index(drop=True)
 
