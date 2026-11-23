@@ -57,8 +57,8 @@ def load_composite_pairs(composites_gdf):
     # When checking whether a ground plot falls within a pair, we use the HN mission polygon. The HN
     # polygon is expected to be a subset of the LO polygon (the LO mission may extend further out to
     # capture oblique views into the area of interest). In the current composites file, HN pokes
-    # past LO in about half of the composites, but only by tiny slivers (at most ~0.23 sq m), so
-    # intersecting HN with LO gives identical plot matches. Using HN directly, but warn if this
+    # past LO in some composites, but only by negligible amount (well under 1 sq m), so
+    # intersecting HN with LO gives identical plot matches. We use HN directly, but warn if this
     # assumption is violated by more than a negligible area in future versions of the file.
     hn_outside_lo_area = hn_geom.difference(lo_geom).area
     violations = pairs.loc[
@@ -67,7 +67,7 @@ def load_composite_pairs(composites_gdf):
     if violations:
         print(
             f"WARNING: HN polygon extends beyond LO polygon by more than "
-            f"{HN_OUTSIDE_LO_TOLERANCE_M2} m² for composites: {violations}. "
+            f"{HN_OUTSIDE_LO_TOLERANCE_M2} sq meters for composites: {violations}. "
             "Consider using the HN/LO intersection instead."
         )
 
