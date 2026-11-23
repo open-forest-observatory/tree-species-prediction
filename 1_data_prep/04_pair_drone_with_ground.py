@@ -2,156 +2,81 @@ import sys
 from pathlib import Path
 
 import geopandas as gpd
-import numpy as np
 import pandas as pd
 
 import _bootstrap
 from configs.path_config import path_config
 
+# Meters-based CRS used for all spatial operations
+METRIC_CRS = 32610
 
-def classify_mission(row):
-    altitude = row["mean_altitude"]
-    pitch = row["camera_pitch_derived"]
-    terrain_corr = row["flight_terrain_correlation_photogrammetry"]
-    sd_photogrammetry_altitude = row["sd_photogrammetry_altitude"]
-    front_overlap = row["overlap_front_nominal"]
-    side_overlap = row["overlap_side_nominal"]
-
-    # Check for NaNs
-    if (
-        pd.isna(altitude)
-        or pd.isna(pitch)
-        or pd.isna(terrain_corr)
-        or pd.isna(front_overlap)
-        or pd.isna(side_overlap)
-    ):
-        return "unknown"
-
-    # Must meet terrain fidelity or SD requirement
-    if not (terrain_corr > 0.75 or sd_photogrammetry_altitude < 12):
-        return "low-terrain-fidelity"
-
-    # High-Nadir requirements
-    if (
-        100 <= altitude <= 160
-        and 0 <= pitch <= 10
-        and (
-            (front_overlap >= 90 and side_overlap >= 80)
-            or (front_overlap >= 85 and side_overlap >= 85)
-        )
-    ):
-        return "high-nadir"
-
-    # Low-Oblique requirements
-    if (
-        60 <= altitude <= 120
-        and 18 <= pitch <= 38
-        and front_overlap >= 70
-        and side_overlap >= 60
-    ):
-        return "low-oblique"
-
-    return "unclassified"
+# HN polygons that extend beyond their LO polygon by more than this many sq meters trigger a warning
+HN_OUTSIDE_LO_TOLERANCE_M2 = 1.0
 
 
-# Helper function to get minimum value from comma-separated values
-def extract_min_overlap(val):
-    if pd.isna(val):
-        return np.nan
-    if isinstance(val, str) and "," in val:
-        return min(float(x.strip()) for x in val.split(","))
-    # Return single values after converting to float
-    return float(val)
-
-
-def pair_drone_missions(drone_missions_gdf):
+def load_composite_pairs(composites_gdf):
     """
-    Classify drone missions into high-nadir and low-oblique based on criteria,
-    then pair them based on spatial overlap and date of collection.
+    Reshape the curated composites file (one row per mission, two missions per composite) into one
+    row per high-nadir (HN) / low-oblique (LO) pair.
 
     Args:
-        drone_missions_gdf (gpd.GeoDataFrame): GeoDataFrame containing drone missions metadata
+        composites_gdf (gpd.GeoDataFrame): Rows from selected-composites-polygons.gpkg with columns
+            composite_id, mission_type ("hn" or "lo"), mission_id, date, geometry
 
     Returns:
-        gpd.GeoDataFrame: Paired drone missions with spatial and temporal criteria met
+        gpd.GeoDataFrame: One row per composite with mission_id_hn, mission_id_lo, date_hn, date_lo,
+            drone_date, hn_lo_date_diff. The geometry is the HN mission polygon.
     """
-    # Convert columns to numeric, handling errors and occurances of double overlap values
-    drone_missions_gdf["overlap_front_nominal"] = drone_missions_gdf[
-        "overlap_front_nominal"
-    ].apply(extract_min_overlap)
-    drone_missions_gdf["overlap_side_nominal"] = drone_missions_gdf[
-        "overlap_side_nominal"
-    ].apply(extract_min_overlap)
-    drone_missions_gdf["camera_pitch_derived"] = pd.to_numeric(
-        drone_missions_gdf["camera_pitch_derived"], errors="coerce"
-    )
-    drone_missions_gdf["flight_terrain_correlation_photogrammetry"] = pd.to_numeric(
-        drone_missions_gdf["flight_terrain_correlation_photogrammetry"], errors="coerce"
-    )
+    # Every composite should be made of exactly one HN and one LO mission
+    type_counts = composites_gdf.groupby(["composite_id", "mission_type"]).size()
+    if not (type_counts == 1).all() or set(
+        composites_gdf["mission_type"].unique()
+    ) != {"hn", "lo"}:
+        raise ValueError("Each composite must have exactly one 'hn' and one 'lo' mission")
 
-    # Classify high-nadir and low-oblique missions
-    drone_missions_gdf["mission_type"] = drone_missions_gdf.apply(
-        classify_mission, axis=1
-    )
+    # Project to a meters-based CRS so areas are in sq meters
+    composites_gdf = composites_gdf.to_crs(METRIC_CRS)
 
-    print(
-        "Number of missions classified as High-Nadir: ",
-        len(drone_missions_gdf[drone_missions_gdf["mission_type"] == "high-nadir"]),
-    )
-    print(
-        "Number of missions classified as Low-Oblique: ",
-        len(drone_missions_gdf[drone_missions_gdf["mission_type"] == "low-oblique"]),
-    )
+    columns = ["composite_id", "mission_id", "date", "geometry"]
+    hn = composites_gdf.loc[composites_gdf["mission_type"] == "hn", columns]
+    lo = composites_gdf.loc[composites_gdf["mission_type"] == "lo", columns]
+    # join on composite_id to get one row per HN/LO pair, with suffixes to distinguish the two missions
+    pairs = hn.merge(lo, on="composite_id", suffixes=("_hn", "_lo"))
 
-    # Next, we need to create pairs of high-nadir and low-oblique missions based on year
-    # Convert date column to datetime
-    drone_missions_gdf["earliest_date_derived"] = pd.to_datetime(
-        drone_missions_gdf["earliest_date_derived"], errors="coerce"
-    )
+    # Create GeoSeries for the HN and LO geometries, preserving the CRS
+    hn_geom = gpd.GeoSeries(pairs["geometry_hn"], crs=composites_gdf.crs)
+    lo_geom = gpd.GeoSeries(pairs["geometry_lo"], crs=composites_gdf.crs)
 
-    # Drop rows with unknown mission_type or missing date
-    valid_missions = drone_missions_gdf[
-        drone_missions_gdf["mission_type"].isin(["high-nadir", "low-oblique"])
-        & drone_missions_gdf["earliest_date_derived"].notna()
-    ].copy()
-
-    # Split into two groups
-    high_nadir = valid_missions[valid_missions["mission_type"] == "high-nadir"].copy()
-    low_oblique = valid_missions[valid_missions["mission_type"] == "low-oblique"].copy()
-
-    # Create all possible pairs that spatially overlap
-    # Note: after this step, keys from high-nadir will be suffixed with _1 and low-oblique with _2
-    paired = gpd.overlay(
-        high_nadir, low_oblique, how="intersection", keep_geom_type=False
-    )
-
-    # Filter pairs by date of collection.
-    # Condition: needs to be collected within same calendar year
-    def is_valid_pair(row):
-        same_year = (
-            row["earliest_date_derived_1"].year == row["earliest_date_derived_2"].year
+    # When checking whether a ground plot falls within a pair, we use the HN mission polygon. The HN
+    # polygon is expected to be a subset of the LO polygon (the LO mission may extend further out to
+    # capture oblique views into the area of interest). In the current composites file, HN pokes
+    # past LO in about half of the composites, but only by tiny slivers (at most ~0.23 sq m), so
+    # intersecting HN with LO gives identical plot matches. Using HN directly, but warn if this
+    # assumption is violated by more than a negligible area in future versions of the file.
+    hn_outside_lo_area = hn_geom.difference(lo_geom).area
+    violations = pairs.loc[
+        hn_outside_lo_area > HN_OUTSIDE_LO_TOLERANCE_M2, "composite_id"
+    ].tolist()
+    if violations:
+        print(
+            f"WARNING: HN polygon extends beyond LO polygon by more than "
+            f"{HN_OUTSIDE_LO_TOLERANCE_M2} m² for composites: {violations}. "
+            "Consider using the HN/LO intersection instead."
         )
-        return same_year
 
-    paired_valid = paired[paired.apply(is_valid_pair, axis=1)].reset_index(drop=True)
-
-    # Force include pair 337 & 338
-    forced_pair = paired[
-        (paired["mission_id_1"] == "000337") & (paired["mission_id_2"] == "000338")
-    ]
-    paired_valid = pd.concat([paired_valid, forced_pair], ignore_index=True)
-
-    # Calculate absolute date difference
-    paired_valid["date_diff_days"] = (
-        (
-            paired_valid["earliest_date_derived_1"]
-            - paired_valid["earliest_date_derived_2"]
-        )
-        .abs()
-        .dt.days
+    pairs = gpd.GeoDataFrame(
+        pairs.drop(columns=["geometry_hn", "geometry_lo"]),
+        geometry=hn_geom.values,
+        crs=composites_gdf.crs,
     )
 
-    return paired_valid
+    # The drone pair's date is the date of the later of the two missions
+    pairs["drone_date"] = pd.to_datetime(pairs[["date_hn", "date_lo"]].max(axis=1))
+    # Absolute date difference between the HN and LO missions, used for tie-breaking
+    pairs["hn_lo_date_diff"] = (pairs["date_hn"] - pairs["date_lo"]).abs().dt.days
+
+    print("Number of HN/LO composite pairs:", len(pairs))
+    return pairs
 
 
 def match_ground_plots_with_drone_missions(
@@ -183,17 +108,7 @@ def match_ground_plots_with_drone_missions(
         "survey_date"
     ].apply(parse_survey_date)
 
-    # Convert to GeoDataFrame with geometry column as intersection of drone mission geometries
-    paired_drone_missions_gdf.to_crs(32610, inplace=True)  # Project to meters-based CRS
-
-    # Set drone_date to the later date of the two missions in the pair
-    paired_drone_missions_gdf["drone_date"] = pd.to_datetime(
-        paired_drone_missions_gdf[
-            ["earliest_date_derived_1", "earliest_date_derived_2"]
-        ].max(axis=1)
-    )
-
-    # Project ground reference plots to the same CRS as the drone missions
+    # Project ground reference plots to the same meters-based CRS as the drone missions
     ground_ref_plots_gdf.to_crs(paired_drone_missions_gdf.crs, inplace=True)
 
     # Buffer the plots geometry by 40m
@@ -213,26 +128,7 @@ def match_ground_plots_with_drone_missions(
     valid_pairs = joined[
         (joined["project_name"] == "NEON2023")
         | (joined["ground_and_drone_year_diff"] <= 8)
-    ]
-
-    # Rename _1 to _hn and _2 to _lo
-    paired_columns_rename = {
-        "mission_id_1": "mission_id_hn",
-        "mission_id_2": "mission_id_lo",
-        "earliest_date_derived_1": "earliest_date_derived_hn",
-        "earliest_date_derived_2": "earliest_date_derived_lo",
-    }
-    valid_pairs.rename(columns=paired_columns_rename, inplace=True)
-
-    # Calculate date difference between HN and LO missions
-    valid_pairs["hn_lo_date_diff"] = (
-        (
-            valid_pairs["earliest_date_derived_hn"]
-            - valid_pairs["earliest_date_derived_lo"]
-        )
-        .abs()
-        .dt.days
-    )
+    ].copy()
 
     # Convert mission IDs to integers for numerical sorting (needed to pick mission with highest ID when breaking ties)
     valid_pairs["mission_id_hn_int"] = valid_pairs["mission_id_hn"].astype(int)
@@ -256,10 +152,11 @@ def match_ground_plots_with_drone_missions(
     ground_plot_drone_missions_matches = valid_pairs[
         [
             "plot_id",
+            "composite_id",
             "mission_id_hn",
             "mission_id_lo",
-            "earliest_date_derived_hn",
-            "earliest_date_derived_lo",
+            "date_hn",
+            "date_lo",
             "survey_date_parsed",
             "ground_and_drone_year_diff",
         ]
@@ -269,12 +166,12 @@ def match_ground_plots_with_drone_missions(
 
 
 if __name__ == "__main__":
-    # Read file with all drone missions metadata, including computed altitude values
-    drone_missions_gdf = gpd.read_file(path_config.drone_missions_with_alt_file)
+    # Read curated HN/LO drone mission pairs
+    composites_gdf = gpd.read_file(path_config.selected_composites_file)
     # Read ground reference plots
     ground_ref_plots_gdf = gpd.read_file(path_config.ground_reference_plots_file)
 
-    paired_drone_missions_gdf = pair_drone_missions(drone_missions_gdf)
+    paired_drone_missions_gdf = load_composite_pairs(composites_gdf)
     ground_plot_drone_missions_matches = match_ground_plots_with_drone_missions(
         paired_drone_missions_gdf, ground_ref_plots_gdf
     )

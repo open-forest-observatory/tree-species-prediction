@@ -33,6 +33,13 @@ class PathConfig:
         ground_reference_folder, "ofo_ground-reference_trees.gpkg"
     )
 
+    # Curated high-nadir/low-oblique drone mission pairs ("composites"). One polygon per mission,
+    # two missions per composite. Downloaded from
+    # ofo-public/drone/mission-composites_01/selected-composites-polygons.gpkg
+    selected_composites_file: Path = Path(
+        raw_folder, "selected-composites-polygons.gpkg"
+    )
+
     # Path to parent remote folder with all missions
     all_missions_remote_folder: str = "js2s3:ofo-public/drone/missions_01"
 
