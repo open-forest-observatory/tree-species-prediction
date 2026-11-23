@@ -14,7 +14,7 @@ METRIC_CRS = 32610
 # within the HN polygon
 MIN_OVERLAP_AREA_M2 = 2500.0
 # Fraction of the plot area that must be inside the HN polygon to count as "all of the plot". Slightly
-# below 1 to absorb floating-point error along shared boundaries.
+# below 1 to absorb floating-point rounding in the area calculations.
 FULL_COVERAGE_MIN_FRACTION = 0.999
 
 # HN polygons that extend beyond their LO polygon by more than this many sq meters trigger a warning
