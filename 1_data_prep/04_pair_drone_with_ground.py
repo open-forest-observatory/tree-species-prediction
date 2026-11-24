@@ -36,10 +36,13 @@ def load_composite_pairs(composites_gdf):
     """
     # Every composite should be made of exactly one HN and one LO mission
     type_counts = composites_gdf.groupby(["composite_id", "mission_type"]).size()
-    if not (type_counts == 1).all() or set(
-        composites_gdf["mission_type"].unique()
-    ) != {"hn", "lo"}:
-        raise ValueError("Each composite must have exactly one 'hn' and one 'lo' mission")
+    if not (type_counts == 1).all() or set(composites_gdf["mission_type"].unique()) != {
+        "hn",
+        "lo",
+    }:
+        raise ValueError(
+            "Each composite must have exactly one 'hn' and one 'lo' mission"
+        )
 
     # Project to a meters-based CRS so areas are in sq meters
     composites_gdf = composites_gdf.to_crs(METRIC_CRS)
@@ -135,13 +138,13 @@ def match_ground_plots_with_drone_missions(
     joined["plot_area_m2"] = joined.geometry.area
     joined["overlap_area_m2"] = joined.geometry.intersection(hn_geoms).area
     joined["plot_fully_covered"] = (
-        joined["overlap_area_m2"]
-        >= joined["plot_area_m2"] * FULL_COVERAGE_MIN_FRACTION
+        joined["overlap_area_m2"] >= joined["plot_area_m2"] * FULL_COVERAGE_MIN_FRACTION
     )
 
     # Spatial rule: keep the plot if all of it OR at least 1/4 ha of it falls within the HN polygon
     joined = joined[
-        joined["plot_fully_covered"] | (joined["overlap_area_m2"] >= MIN_OVERLAP_AREA_M2)
+        joined["plot_fully_covered"]
+        | (joined["overlap_area_m2"] >= MIN_OVERLAP_AREA_M2)
     ].copy()
 
     # Year difference should be <= 8 calendar years apart to get a valid pair
